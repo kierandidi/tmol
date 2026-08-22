@@ -9,6 +9,7 @@ chemistry. The linked tutorial provides a complete protein–ligand walkthrough.
 >   </tutorial/07_ligand_and_params>`.
 > - **Related workflows:** {doc}`Packing </workflows/packing>` and
 >   {doc}`Nucleic acids </workflows/nucleic_acids>`.
+> - **Covalent glycans:** {doc}`Glycans </user_guide/glycans>`.
 > - **API reference:** {doc}`Ligands </api/ligand>`,
 >   {doc}`Input and Output </api/io>`, and {doc}`Scoring </api/score>`.
 > - **Rosetta mapping:** {doc}`Ligands and residue-parameter files

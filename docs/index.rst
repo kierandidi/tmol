@@ -45,5 +45,6 @@ interactive :doc:`examples <examples_index>`, use a concise
    Quickstart <quickstart>
    Workflows <workflows/index>
    Examples <examples_index>
+   Covalently linked glycans <user_guide/glycans>
    API <api_reference>
    Contributing <contributor_guide>
