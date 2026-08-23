@@ -82,6 +82,7 @@ from tmol.score.constraint import (
     create_mainchain_coordinate_constraints,
 )
 from tmol.relax import fast_relax
+from tmol.metal import setup_metal_constraints
 
 try:
     __version__ = version("tmol")
@@ -131,6 +132,7 @@ __all__ = [
     "run_min",
     "selection_gallery",
     "set_named_torsions",
+    "setup_metal_constraints",
     "switchable_view",
     "three2one",
     "view",

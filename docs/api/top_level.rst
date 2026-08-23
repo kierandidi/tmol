@@ -77,5 +77,5 @@ C++ and CUDA integration
 ------------------------
 
 .. automodule:: tmol
-   :members: include_paths
+   :members: include_paths, setup_metal_constraints
    :show-inheritance:
