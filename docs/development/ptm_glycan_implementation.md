@@ -97,11 +97,17 @@ semantics: ASN ND2, SER OG, or THR OG1 loses its attached hydrogen and gains a
 connection to the sugar anomeric atom. TMol additionally preserves the input
 branch topology explicitly instead of inferring it from distance.
 
-Rosetta capabilities not yet reproduced are carbohydrate torsion energies,
-glycan-tree construction/movers, glycan-specific rotamer sampling, automatic
-glycan connection inference, and a general PTM patch library. Glycan blocks
-should therefore be held fixed for discrete packing and included in Cartesian
-minimization only when the deposited connectivity is trustworthy.
+The carbohydrate-aware score preset now adds Rosetta's `sugar_bb` intrinsic
+CHI linkage energy at weight 0.5. Its raw score on the ten-residue 4BYH chain-C
+glycan is 12.252934 in TMol versus 12.252924 in PyRosetta 2026.33; gradients
+are finite and CPU/CUDA parity is tested. Ordinary beta2016 deliberately keeps
+this term at zero, as Rosetta's `beta_nov16` weights do.
+
+Rosetta capabilities not yet reproduced are glycan-tree construction/movers,
+linkage-conformer sampling, automatic glycan connection inference, and a
+general PTM patch library. Glycan blocks should therefore be held fixed for
+discrete packing. They can be Cartesian-minimized with `sugar_bb` when the
+deposited connectivity is trustworthy.
 
 ## Metal roadmap
 

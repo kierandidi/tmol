@@ -13,6 +13,7 @@ glycans </tutorial/09_ptms_and_glycopeptides>`.
 from biotite.structure.io.pdbx import CIFFile, get_structure
 import torch
 
+from tmol import carbohydrate_beta2016_score_function
 from tmol.io import build_context_from_biotite, pose_stack_from_biotite
 
 cif = CIFFile.read("glycoprotein.cif")
@@ -22,6 +23,9 @@ device = torch.device("cuda")
 context = build_context_from_biotite(structure, device, prepare_ligands=True)
 pose = pose_stack_from_biotite(
     structure, device, context=context, no_optH=True
+)
+score_function = carbohydrate_beta2016_score_function(
+    device, param_db=context.parameter_database
 )
 ```
 
@@ -47,15 +51,21 @@ The equivalent Rosetta initialization flags are:
 
 On the 4BYH chain-C fixture, TMol and Rosetta both recover the ASN ND2--NAG C1
 root link and all nine sugar--sugar links, including the two three-way branch
-residues. Compare topology and bond geometry, not total score values: TMol's
-beta2016 score and Rosetta's carbohydrate-aware score function are different
-models.
+residues. TMol's differentiable `sugar_bb` term matches Rosetta 2026.33's raw
+score for this branch to within 3e-5 score units. The explicit carbohydrate
+preset gives it Rosetta's default weight of 0.5; ordinary beta2016 keeps it at
+zero, matching Rosetta's `beta_nov16` weights.
+
+`sugar_bb` supplies Rosetta's intrinsic CHI phi/psi and exocyclic-omega
+preferences for the recognized PDB sugars. Use it for Cartesian scoring and
+minimization. Keep its weight at zero during discrete packing: TMol does not
+yet move an entire downstream glycan subtree as one linkage proposal.
 
 ## Current Limits
 
 - Bonds must be explicit. TMol does not infer glycosylation from distance.
 - Input ligand atoms and bond orders must be complete enough for ligand
   preparation; PDB topology without chemistry-level bond orders is rejected.
-- The generic bonded-neighbor graph is scored and differentiable, but TMol does
-  not yet provide Rosetta-style carbohydrate torsion preferences, glycan-tree
-  movers, or IUPAC glycan construction.
+- The generic bonded-neighbor graph and `sugar_bb` are differentiable, but TMol
+  does not yet provide Rosetta linkage-conformer sampling, glycan-tree movers,
+  or IUPAC glycan construction.

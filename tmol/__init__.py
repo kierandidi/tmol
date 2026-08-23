@@ -74,6 +74,7 @@ from tmol.pose import (
 )
 from tmol.score import (
     beta2016_score_function,
+    carbohydrate_beta2016_score_function,
     ScoreFunction,
     ScoreType,
 )
@@ -104,6 +105,7 @@ __all__ = [
     "ScoreType",
     "atom_records_from_pose_stack",
     "beta2016_score_function",
+    "carbohydrate_beta2016_score_function",
     "build_kinforest_network",
     "canonical_form_from_openfold",
     "canonical_form_from_pdb",

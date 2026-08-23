@@ -67,9 +67,28 @@ def main():
         "load_seconds": load_seconds,
     }
     if args.score:
+        from pyrosetta.rosetta.core.scoring import ScoreType
+
         started = time.perf_counter()
-        result["score"] = float(pyrosetta.get_score_function()(pose))
+        score_function = pyrosetta.get_score_function()
+        result["score"] = float(score_function(pose))
         result["score_seconds"] = time.perf_counter() - started
+        result["sugar_bb"] = {
+            "raw": float(pose.energies().total_energies()[ScoreType.sugar_bb]),
+            "weight": float(score_function.get_weight(ScoreType.sugar_bb)),
+            "per_residue": [
+                {
+                    "pose_index": index,
+                    "pdb_id": pose.pdb_info().pose2pdb(index).strip(),
+                    "raw": float(
+                        pose.energies().residue_total_energies(index)[
+                            ScoreType.sugar_bb
+                        ]
+                    ),
+                }
+                for index in carbohydrate_residues
+            ],
+        }
     print(json.dumps(result, indent=2, sort_keys=True))
 
 

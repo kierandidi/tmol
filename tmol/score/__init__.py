@@ -69,6 +69,17 @@ def beta2016_score_function(
     return _memoized_beta2016(device)
 
 
+def carbohydrate_beta2016_score_function(
+    device: torch.device, param_db: Optional[ParameterDatabase] = None
+) -> "ScoreFunction":
+    """Return beta2016 plus Rosetta's carbohydrate ``sugar_bb`` weight."""
+
+    device = resolve_device(device)
+    score_function = _non_memoized_beta2016(device, param_db)
+    score_function.set_weight(ScoreType.sugar_bb, 0.5)
+    return score_function
+
+
 __all__ = [
     "AcceptorHybridization",
     "AtomTypeParamResolver",
@@ -83,4 +94,5 @@ __all__ = [
     "WholePoseScoringModule",
     "beta2016_score_function",
     "calculate_fragment_interactions",
+    "carbohydrate_beta2016_score_function",
 ]
