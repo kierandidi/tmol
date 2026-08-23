@@ -81,6 +81,7 @@ def build_context_from_biotite(
     """
     torch_device = resolve_device(torch_device)
     from tmol.io._covalent_bonds import augment_database_for_covalent_bonds
+    from tmol.io._metal_bonds import augment_database_for_metal_bonds
 
     if prepare_ligands:
         from tmol.ligand import prepare_ligands as _prepare_ligands
@@ -101,6 +102,9 @@ def build_context_from_biotite(
         param_db, covalent_variant_names = augment_database_for_covalent_bonds(
             biotite_structure, param_db
         )
+        param_db, metal_variant_names = augment_database_for_metal_bonds(
+            biotite_structure, param_db
+        )
         co = CanonicalOrdering.from_chemdb(param_db.chemical)
         rts = ResidueTypeSet.from_database(param_db.chemical)
         pbt = PackedBlockTypes.from_restype_list(
@@ -113,6 +117,7 @@ def build_context_from_biotite(
             restype_set=rts,
             fragment_definitions=fragment_definitions,
             covalent_variant_names=covalent_variant_names,
+            metal_variant_names=metal_variant_names,
         )
 
     if param_db is None:
@@ -124,6 +129,9 @@ def build_context_from_biotite(
         db, covalent_variant_names = augment_database_for_covalent_bonds(
             biotite_structure, param_db
         )
+        db, metal_variant_names = augment_database_for_metal_bonds(
+            biotite_structure, db
+        )
         co, rts, pbt = _derived_types_for_param_db(db, torch_device)
     if param_db is None:
         # The cached default types are valid only when no custom bonds require
@@ -131,7 +139,10 @@ def build_context_from_biotite(
         db2, covalent_variant_names = augment_database_for_covalent_bonds(
             biotite_structure, db
         )
-        if covalent_variant_names:
+        db2, metal_variant_names = augment_database_for_metal_bonds(
+            biotite_structure, db2
+        )
+        if covalent_variant_names or metal_variant_names:
             db = db2
             co, rts, pbt = _derived_types_for_param_db(db, torch_device)
     return PoseBuildContext(
@@ -140,6 +151,7 @@ def build_context_from_biotite(
         parameter_database=db,
         restype_set=rts,
         covalent_variant_names=covalent_variant_names,
+        metal_variant_names=metal_variant_names,
     )
 
 
@@ -289,7 +301,15 @@ def pose_stack_from_biotite(  # noqa: C901
         pose_stack = apply_covalent_bonds_from_biotite(
             pose_stack, biotite_structure, context.covalent_variant_names
         )
-    block_has_missing_atoms = opt_return_vals["block_has_missing_atoms"]
+    if context.metal_variant_names:
+        from tmol.io._metal_bonds import apply_metal_bonds_from_biotite
+
+        pose_stack = apply_metal_bonds_from_biotite(
+            pose_stack, biotite_structure, context.metal_variant_names
+        )
+    block_has_missing_atoms = _clear_virtual_only_missing_blocks(
+        pose_stack, opt_return_vals["block_has_missing_atoms"]
+    )
 
     if block_has_missing_atoms is not None and torch.any(block_has_missing_atoms):
         _assert_no_ligand_with_missing_atoms(pose_stack, block_has_missing_atoms)
@@ -334,6 +354,35 @@ def pose_stack_from_biotite(  # noqa: C901
     if len(opt_return_vals) > (0 if return_block_has_missing_atoms else 1):
         return pose_stack, opt_return_vals
     return pose_stack
+
+
+def _clear_virtual_only_missing_blocks(
+    pose_stack: PoseStack, block_has_missing_atoms: "torch.Tensor | None"
+):
+    """Clear rebuild flags when every absent atom is explicitly virtual."""
+
+    if block_has_missing_atoms is None:
+        return None
+    result = block_has_missing_atoms.clone()
+    pbt = pose_stack.packed_block_types
+    for pi, bi in torch.nonzero(result, as_tuple=False).cpu().tolist():
+        bt_ind = int(pose_stack.block_type_ind[pi, bi].item())
+        if bt_ind < 0:
+            continue
+        bt = pbt.active_block_types[bt_ind]
+        atom_start = int(pose_stack.block_coord_offset[pi, bi].item())
+        block_coords = pose_stack.coords[pi, atom_start : atom_start + len(bt.atoms)]
+        missing_names = {
+            bt.atoms[ai].name
+            for ai in torch.nonzero(
+                torch.isnan(block_coords).any(dim=-1), as_tuple=False
+            )
+            .flatten()
+            .tolist()
+        }
+        if missing_names <= set(bt.properties.virtual):
+            result[pi, bi] = False
+    return result
 
 
 def _assert_no_ligand_with_missing_atoms(
@@ -567,7 +616,7 @@ def _filter_supported_atoms_and_connectivity(  # noqa: C901
     co: CanonicalOrdering,
 ):
     biotite_residues = biotite.structure.get_residues(biotite_structure)[1]
-    to_remove = {"HOH"}
+    to_remove = set()
     known_residue_names = set(co.restype_name3_to_io_equiv_class)
     for i_3lc in biotite_residues:
         if i_3lc in to_remove:
@@ -581,6 +630,31 @@ def _filter_supported_atoms_and_connectivity(  # noqa: C901
     valid_res = numpy.array([name not in to_remove for name in res_names])[
         biotite_residue_starts
     ]
+    # Keep only waters that are explicit metal ligands. Ordinary crystallographic
+    # waters retain the historical import behavior and are discarded.
+    from tmol.io._metal_bonds import _metal_cross_residue_bonds
+
+    coordinated_waters = {
+        key
+        for contact in _metal_cross_residue_bonds(biotite_structure)
+        for key, _atom in contact
+        if key[3] == "HOH"
+    }
+    ins_codes = (
+        biotite_structure.ins_code
+        if "ins_code" in biotite_structure.get_annotation_categories()
+        else None
+    )
+    for res_index, start in enumerate(biotite_residue_starts):
+        if res_names[start] != "HOH":
+            continue
+        key = (
+            str(biotite_structure.chain_id[start]),
+            int(biotite_structure.res_id[start]),
+            str(ins_codes[start]) if ins_codes is not None else "",
+            "HOH",
+        )
+        valid_res[res_index] = key in coordinated_waters
 
     # Filter residues missing mainchain atoms required for rotamer building.
     # Only atoms present in every variant count as required, so an atom a terminus

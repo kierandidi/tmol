@@ -5,10 +5,13 @@ element_types:
   - {name: O, atomic_number: 8}
   - {name: F, atomic_number: 9}
   - {name: Na, atomic_number: 11}
+  - {name: Mg, atomic_number: 12}
   - {name: P, atomic_number: 15}
   - {name: S, atomic_number: 16}
   - {name: Cl, atomic_number: 17}
   - {name: K, atomic_number: 19}
+  - {name: Ca, atomic_number: 20}
+  - {name: Zn, atomic_number: 30}
   - {name: Br, atomic_number: 35}
   - {name: I, atomic_number: 53}
   - {name: Vr, atomic_number: 0}
@@ -64,6 +67,10 @@ atom_types:
   - { name: HNbb, element: H, is_polarh : true }
   - { name: Hwat, element: H, is_polarh : true }
   - { name: Vrt, element: Vr}
+  # Rosetta fa_standard divalent-ion types.
+  - { name: Mg2p, element: Mg }
+  - { name: Ca2p, element: Ca }
+  - { name: Zn2p, element: Zn }
 
   # DNA atom types. Rosetta shares Ntrp/Nhis/NH2O/Npro between protein and DNA;
   # tmol splits them so the DNA-specific LK values do not perturb protein scores.
@@ -3815,6 +3822,144 @@ residues:
       samples: [0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 200, 220, 240, 260, 280, 300, 320, 340]
       expansions: []
     default_jump_connection_atom: C1'
+  # Common divalent ions. Virtual atoms provide a stable local frame and carry
+  # no score; deposited coordination partners are separate pose connections.
+  - name: MG
+    base_name: MG
+    name3: MG
+    io_equiv_class: MG
+    atoms:
+    - { name: MG, atom_type: Mg2p }
+    - { name: V1, atom_type: Vrt }
+    - { name: V2, atom_type: Vrt }
+    - { name: V3, atom_type: Vrt }
+    - { name: V4, atom_type: Vrt }
+    - { name: V5, atom_type: Vrt }
+    - { name: V6, atom_type: Vrt }
+    - { name: V7, atom_type: Vrt }
+    - { name: V8, atom_type: Vrt }
+    atom_aliases: []
+    bonds:
+    - [MG, V1, SINGLE, false]
+    - [MG, V2, SINGLE, false]
+    - [MG, V3, SINGLE, false]
+    - [MG, V4, SINGLE, false]
+    - [MG, V5, SINGLE, false]
+    - [MG, V6, SINGLE, false]
+    - [MG, V7, SINGLE, false]
+    - [MG, V8, SINGLE, false]
+    connections: []
+    torsions: []
+    icoors:
+    - { name: MG, phi: 0 deg, theta: 0 deg, d: 0, parent: MG, grand_parent: V1, great_grand_parent: V2 }
+    - { name: V1, phi: 0 deg, theta: 180 deg, d: 1, parent: MG, grand_parent: V1, great_grand_parent: V2 }
+    - { name: V2, phi: 0 deg, theta: 90 deg, d: 1, parent: MG, grand_parent: V1, great_grand_parent: V2 }
+    - { name: V3, phi: 90 deg, theta: 90 deg, d: 1, parent: MG, grand_parent: V2, great_grand_parent: V1 }
+    - { name: V4, phi: 180 deg, theta: 90 deg, d: 1, parent: MG, grand_parent: V2, great_grand_parent: V1 }
+    - { name: V5, phi: 180 deg, theta: 90 deg, d: 1, parent: MG, grand_parent: V1, great_grand_parent: V2 }
+    - { name: V6, phi: -90 deg, theta: 90 deg, d: 1, parent: MG, grand_parent: V2, great_grand_parent: V1 }
+    - { name: V7, phi: 45 deg, theta: 90 deg, d: 1, parent: MG, grand_parent: V1, great_grand_parent: V2 }
+    - { name: V8, phi: -45 deg, theta: 90 deg, d: 1, parent: MG, grand_parent: V1, great_grand_parent: V2 }
+    properties: &metal_properties
+      is_canonical: true
+      polymer:
+        is_polymer: false
+        polymer_type:
+        backbone_type:
+        mainchain_atoms: []
+        sidechain_chirality: NA
+        termini_variants: []
+      chemical_modifications: []
+      connectivity: []
+      protonation:
+        protonated_atoms: []
+        protonation_state: positively_charged
+        pH: 7
+      virtual: [V1, V2, V3, V4, V5, V6, V7, V8]
+    chi_samples: []
+    default_jump_connection_atom: MG
+  - name: CA
+    base_name: CA
+    name3: CA
+    io_equiv_class: CA
+    atoms:
+    - { name: CA, atom_type: Ca2p }
+    - { name: V1, atom_type: Vrt }
+    - { name: V2, atom_type: Vrt }
+    - { name: V3, atom_type: Vrt }
+    - { name: V4, atom_type: Vrt }
+    - { name: V5, atom_type: Vrt }
+    - { name: V6, atom_type: Vrt }
+    - { name: V7, atom_type: Vrt }
+    - { name: V8, atom_type: Vrt }
+    atom_aliases: []
+    bonds:
+    - [CA, V1, SINGLE, false]
+    - [CA, V2, SINGLE, false]
+    - [CA, V3, SINGLE, false]
+    - [CA, V4, SINGLE, false]
+    - [CA, V5, SINGLE, false]
+    - [CA, V6, SINGLE, false]
+    - [CA, V7, SINGLE, false]
+    - [CA, V8, SINGLE, false]
+    connections: []
+    torsions: []
+    icoors:
+    - { name: CA, phi: 0 deg, theta: 0 deg, d: 0, parent: CA, grand_parent: V1, great_grand_parent: V2 }
+    - { name: V1, phi: 0 deg, theta: 180 deg, d: 2.4, parent: CA, grand_parent: V1, great_grand_parent: V2 }
+    - { name: V2, phi: 0 deg, theta: 62.060678 deg, d: 2.4, parent: CA, grand_parent: V1, great_grand_parent: V2 }
+    - { name: V3, phi: 60 deg, theta: 90 deg, d: 2.4, parent: CA, grand_parent: V1, great_grand_parent: V2 }
+    - { name: V4, phi: 120 deg, theta: 90 deg, d: 2.4, parent: CA, grand_parent: V1, great_grand_parent: V2 }
+    - { name: V5, phi: 180 deg, theta: 90 deg, d: 2.4, parent: CA, grand_parent: V1, great_grand_parent: V2 }
+    - { name: V6, phi: -120 deg, theta: 90 deg, d: 2.4, parent: CA, grand_parent: V1, great_grand_parent: V2 }
+    - { name: V7, phi: -60 deg, theta: 90 deg, d: 2.4, parent: CA, grand_parent: V1, great_grand_parent: V2 }
+    - { name: V8, phi: 0 deg, theta: 90 deg, d: 2.4, parent: CA, grand_parent: V1, great_grand_parent: V2 }
+    properties:
+      <<: *metal_properties
+      virtual: [V1, V2, V3, V4, V5, V6, V7, V8]
+    chi_samples: []
+    default_jump_connection_atom: CA
+  - name: ZN
+    base_name: ZN
+    name3: ZN
+    io_equiv_class: ZN
+    atoms:
+    - { name: ZN, atom_type: Zn2p }
+    - { name: V1, atom_type: Vrt }
+    - { name: V2, atom_type: Vrt }
+    - { name: V3, atom_type: Vrt }
+    - { name: V4, atom_type: Vrt }
+    - { name: V5, atom_type: Vrt }
+    - { name: V6, atom_type: Vrt }
+    - { name: V7, atom_type: Vrt }
+    - { name: V8, atom_type: Vrt }
+    atom_aliases: []
+    bonds:
+    - [ZN, V1, SINGLE, false]
+    - [ZN, V2, SINGLE, false]
+    - [ZN, V3, SINGLE, false]
+    - [ZN, V4, SINGLE, false]
+    - [ZN, V5, SINGLE, false]
+    - [ZN, V6, SINGLE, false]
+    - [ZN, V7, SINGLE, false]
+    - [ZN, V8, SINGLE, false]
+    connections: []
+    torsions: []
+    icoors:
+    - { name: ZN, phi: 0 deg, theta: 0 deg, d: 0, parent: ZN, grand_parent: V1, great_grand_parent: V2 }
+    - { name: V1, phi: 0 deg, theta: 0 deg, d: 2.2, parent: ZN, grand_parent: V1, great_grand_parent: V2 }
+    - { name: V2, phi: 0 deg, theta: 70.5 deg, d: 2.2, parent: ZN, grand_parent: V1, great_grand_parent: V2 }
+    - { name: V3, phi: 120 deg, theta: 70.5 deg, d: 2.2, parent: ZN, grand_parent: V1, great_grand_parent: V2 }
+    - { name: V4, phi: -120 deg, theta: 70.5 deg, d: 2.2, parent: ZN, grand_parent: V1, great_grand_parent: V2 }
+    - { name: V5, phi: 60 deg, theta: 109.5 deg, d: 2.2, parent: ZN, grand_parent: V1, great_grand_parent: V2 }
+    - { name: V6, phi: -60 deg, theta: 109.5 deg, d: 2.2, parent: ZN, grand_parent: V1, great_grand_parent: V2 }
+    - { name: V7, phi: 180 deg, theta: 109.5 deg, d: 2.2, parent: ZN, grand_parent: V1, great_grand_parent: V2 }
+    - { name: V8, phi: 0 deg, theta: 109.5 deg, d: 2.2, parent: ZN, grand_parent: V1, great_grand_parent: V2 }
+    properties:
+      <<: *metal_properties
+      virtual: [V1, V2, V3, V4, V5, V6, V7, V8]
+    chi_samples: []
+    default_jump_connection_atom: ZN
   - name:  HOH
     base_name: HOH
     name3: HOH

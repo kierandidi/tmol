@@ -1103,3 +1103,31 @@ atom_charge_parameters:
   - { *r: LYS:trimethylated ,*a: HM31, *e: 0.09000 }
   - { *r: LYS:trimethylated ,*a: HM32, *e: 0.09000 }
   - { *r: LYS:trimethylated ,*a: HM33, *e: 0.09000 }
+  # Rosetta fa_standard divalent-ion charges; virtual frame atoms are neutral.
+  - { *r: MG, *a: MG, *e: 2.00000 }
+  - { *r: MG, *a: V1, *e: 0.00000 }
+  - { *r: MG, *a: V2, *e: 0.00000 }
+  - { *r: MG, *a: V3, *e: 0.00000 }
+  - { *r: MG, *a: V4, *e: 0.00000 }
+  - { *r: MG, *a: V5, *e: 0.00000 }
+  - { *r: MG, *a: V6, *e: 0.00000 }
+  - { *r: MG, *a: V7, *e: 0.00000 }
+  - { *r: MG, *a: V8, *e: 0.00000 }
+  - { *r: CA, *a: CA, *e: 2.00000 }
+  - { *r: CA, *a: V1, *e: 0.00000 }
+  - { *r: CA, *a: V2, *e: 0.00000 }
+  - { *r: CA, *a: V3, *e: 0.00000 }
+  - { *r: CA, *a: V4, *e: 0.00000 }
+  - { *r: CA, *a: V5, *e: 0.00000 }
+  - { *r: CA, *a: V6, *e: 0.00000 }
+  - { *r: CA, *a: V7, *e: 0.00000 }
+  - { *r: CA, *a: V8, *e: 0.00000 }
+  - { *r: ZN, *a: ZN, *e: 2.00000 }
+  - { *r: ZN, *a: V1, *e: 0.00000 }
+  - { *r: ZN, *a: V2, *e: 0.00000 }
+  - { *r: ZN, *a: V3, *e: 0.00000 }
+  - { *r: ZN, *a: V4, *e: 0.00000 }
+  - { *r: ZN, *a: V5, *e: 0.00000 }
+  - { *r: ZN, *a: V6, *e: 0.00000 }
+  - { *r: ZN, *a: V7, *e: 0.00000 }
+  - { *r: ZN, *a: V8, *e: 0.00000 }
