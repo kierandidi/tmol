@@ -57,7 +57,7 @@ def setup_metal_constraints(
     proxy--donor, metal--proxy, and all proxy--proxy distances, plus circular
     harmonic restraints for metal--donor--donor-parent angles. The Rosetta
     standard deviations are 0.1 Angstrom and 0.05 radians. Multipliers scale
-    the corresponding energies; non-positive multipliers disable that family.
+    the corresponding energies; a zero multiplier disables that family.
 
     Donor-orientation restraints are omitted when the donor parent is virtual,
     as deposited waters do not define an experimental orientation.
@@ -133,7 +133,13 @@ def setup_metal_constraints(
 
             if distance_multiplier > 1e-10:
                 distance_sd = 0.1 / math.sqrt(distance_multiplier)
-                for metal_ref, proxy_ref, donor_ref, _parent_ref, _donor_type in site:
+                for (
+                    metal_ref,
+                    proxy_ref,
+                    donor_ref,
+                    _parent_ref,
+                    _parent_is_virtual,
+                ) in site:
                     for atom_pair in ((proxy_ref, donor_ref), (metal_ref, proxy_ref)):
                         distance_atoms.append(atom_pair)
                         distance_params.append(
