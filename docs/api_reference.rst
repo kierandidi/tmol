@@ -13,6 +13,7 @@ For an architectural overview and tensor conventions, see
    api/top_level
    api/chemical
    api/database
+   api/glycan
    api/io
    api/kinematics
    api/ligand
