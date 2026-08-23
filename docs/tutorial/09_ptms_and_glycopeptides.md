@@ -63,9 +63,11 @@ print(float(score.detach()), torch.isfinite(coords.grad).all().item())
 ## Repack the peptide
 
 TMol has Dunbrack rotamers for the modified amino-acid backbone/side-chain
-degrees of freedom, but no carbohydrate rotamer library yet. Keep glycan
-blocks fixed during the discrete packing step, then let Cartesian minimization
-move the entire covalent system.
+degrees of freedom. Keep glycan blocks fixed during the ordinary residue
+packing step: glycan linkages move downstream subtrees and therefore use the
+separate Rosetta-derived linkage-conformer library described in
+{doc}`the glycan guide </user_guide/glycans>`. Apply those proposals between
+packing and Cartesian minimization.
 
 ```python
 from tmol.pack import PackerPalette, PackerTask, pack_rotamers
