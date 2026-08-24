@@ -72,10 +72,11 @@ Scoring and optimization
    run_kin_min
    run_min
    set_named_torsions
+   setup_metal_constraints
 
 C++ and CUDA integration
 ------------------------
 
 .. automodule:: tmol
-   :members: include_paths, setup_metal_constraints
+   :members: include_paths
    :show-inheritance:
