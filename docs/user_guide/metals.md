@@ -84,6 +84,18 @@ single Cartesian x displacement; deposited scores are numerically zero.
 Tests also require finite coordinate gradients and exact linear scaling with
 the Rosetta distance/angle multipliers on CPU and CUDA.
 
+## Protein--ligand metal site
+
+RCSB 1AZM provides an end-to-end carbonic-anhydrase/acetazolamide case. Its
+mmCIF `_struct_conn` table records three histidine--Zn contacts and the
+acetazolamide N1--Zn contact. The public import path prepares the AZM ligand,
+retains all four contacts, and creates 18 geometry constraints for the active
+site. The deposited restraint energy is zero. In an H200 installed-wheel check,
+four AZM-donor displacements of 0.04--0.07 Angstrom remained finite and batched
+Cartesian minimization lowered both the full score and every restraint penalty.
+This validates preservation and local refinement of an observed metal-bound
+ligand; it does not make the restraint energy a binding-affinity estimate.
+
 ## Deliberate limits
 
 - Import is explicit-topology-first. TMol does not guess contacts from distance;
