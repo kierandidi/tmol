@@ -103,12 +103,13 @@ glycan connection inference, and a general PTM patch library. Glycan blocks
 should therefore be held fixed for discrete packing and included in Cartesian
 minimization only when the deposited connectivity is trustworthy.
 
-## Metal roadmap
+## Metal implementation and remaining roadmap
 
-Metals should not reuse the ordinary covalent-bond implementation unchanged.
-An attachment atom is allowed one ordinary external covalent bond, while a
-metal routinely has coordination number four or six. Coordination also needs
-different nonbonded exclusions and geometry restraints.
+The metal stack uses the PTM/glycan import utilities but keeps coordination
+separate from ordinary covalent bonds. An ordinary attachment atom allows one
+external covalent bond, while a metal site and a bridging donor may participate
+in several coordination contacts. The importer therefore builds a separate
+many-to-one graph from explicit bond records and supports up to eight contacts.
 
 Rosetta's
 [`SetupMetalsMover`](https://docs.rosettacommons.org/docs/latest/scripting_documentation/RosettaScripts/Movers/movers_pages/SetupMetalsMover)
@@ -122,18 +123,19 @@ Rosetta's broader
 also makes automatic detection an import convenience for known sites, not a
 general metal-site prediction algorithm.
 
-Implement this in four reviewable stages:
+The first two reviewable stages are implemented:
 
-1. **Explicit import.** Add common ion residue types (Zn, Mg, Ca, Fe, Mn, Cu,
-   Co, Ni, Na, and K) with charge/atom parameters. Parse only explicit mmCIF
-   `metalc`/coordination records into a separate many-to-one coordination
-   graph. Preserve the metal as a block and donor identity; do not apply the
-   single-occupancy rule used for covalent attachments.
-2. **Scoring and minimization.** Add metal–donor distance and
-   donor-base–donor–metal angle constraints centered on the deposited
-   geometry, plus explicit exclusions so coordination contacts are not scored
-   as ordinary steric clashes. Make the constraint weight opt-in and visible.
-3. **Packing.** Add donor-aware variants for HIS ND1/NE2, ASP/GLU carboxylates,
+1. **Explicit import.** Zn, Mg, and Ca use Rosetta ion parameters. Explicit
+   mmCIF/PDB coordination records produce donor and metal variants, donor-H
+   removal, virtual proxies, coordinated-water retention, and bond-based
+   nonbonded exclusions without applying the ordinary single-occupancy rule.
+2. **Scoring and minimization.** Rosetta-equivalent proxy/donor, metal/proxy,
+   proxy-pair, and donor-orientation restraints are centered on deposited
+   geometry. Their generic TMol `constraint` weight is opt-in and visible.
+
+The remaining stages are:
+
+3. **Packing.** Add donor-aware choices for HIS ND1/NE2, ASP/GLU carboxylates,
    CYS SG, backbone O, and prepared ligand donors. Remove a donor hydrogen only
    when the chosen coordination state requires it. Freeze the metal and retain
    the current donor rotamer by default; test that repacking and minimization
@@ -144,8 +146,9 @@ Implement this in four reviewable stages:
    over-coordination rather than silently guessing. Explicit mmCIF topology
    must take precedence.
 
-The minimum test matrix should include tetrahedral Zn, octahedral Mg/Ca,
-heme Fe with a covalent organic ligand, a binuclear site, alternate HIS donor
-atoms, waters as coordinators, and a negative close-contact case. Each case
-should check import/export topology, finite gradients, repacking, Cartesian
-minimization, donor protonation, nonbonded exclusions, and CPU/CUDA parity.
+Current real-site tests cover 1CA2 tetrahedral Zn and a seven-coordinate 1CLL
+Ca site, including a coordinated water, exact proxy placement, finite full
+scores, gradients, numerical PyRosetta restraint parity, and Cartesian recovery
+of a displaced donor. Future chemistry coverage should add octahedral Mg, heme
+Fe, binuclear sites, Cys donors, donor-aware repacking, and explicit negative
+close-contact cases.

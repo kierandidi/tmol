@@ -121,6 +121,22 @@ class ConstraintEnergyTerm(EnergyTerm):
 
         return z * z + offset
 
+    @classmethod
+    def circularharmonic_angle(cls, atoms, params):
+        """Circular-harmonic restraint on the angle formed by three atoms."""
+
+        vector1 = atoms[:, 0] - atoms[:, 1]
+        vector2 = atoms[:, 2] - atoms[:, 1]
+        cross_norm = torch.linalg.vector_norm(
+            torch.linalg.cross(vector1, vector2, dim=-1), dim=-1
+        )
+        dot = torch.sum(vector1 * vector2, dim=-1)
+        angle = torch.atan2(cross_norm, dot)
+        delta = torch.atan2(
+            torch.sin(angle - params[:, 0]), torch.cos(angle - params[:, 0])
+        )
+        return (delta / params[:, 1]) ** 2
+
     def setup_block_type(self, block_type: RefinedResidueType):
         super(ConstraintEnergyTerm, self).setup_block_type(block_type)
 

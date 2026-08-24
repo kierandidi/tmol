@@ -46,6 +46,7 @@ interactive :doc:`examples <examples_index>`, use a concise
    Workflows <workflows/index>
    Examples <examples_index>
    Covalently linked glycans <user_guide/glycans>
+   Deposited metal coordination <user_guide/metals>
    API <api_reference>
    Contributing <contributor_guide>
    PTM and glycan implementation report <development/ptm_glycan_implementation>
