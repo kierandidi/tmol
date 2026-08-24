@@ -3,6 +3,7 @@
 import pytest
 import torch
 
+from tmol import run_cart_min
 from tmol.io import pose_stack_from_biotite
 from tmol.metal import setup_metal_constraints
 from tmol.score import ScoreFunction, ScoreType
@@ -154,3 +155,39 @@ def test_setup_metal_constraints_rejects_negative_multipliers(torch_device):
     )
     with pytest.raises(ValueError, match="non-negative"):
         setup_metal_constraints(pose, distance_multiplier=-1)
+
+
+@pytest.mark.parametrize("pdb_text", [_ZN_SITE, _CA_SITE], ids=["zinc", "calcium"])
+def test_metal_site_recovers_after_cartesian_minimization(torch_device, pdb_text):
+    """A perturbed deposited site is usable in the normal minimization stack."""
+
+    pose, context = pose_stack_from_biotite(
+        _structure(_without_water(pdb_text)),
+        torch_device,
+        no_optH=True,
+        return_context=True,
+    )
+    pose = setup_metal_constraints(pose)
+    donor_index, _metal_index = _site_atom_refs(pose)
+    deposited = pose.coords[0, donor_index].clone()
+    pose.coords = pose.coords.clone()
+    pose.coords[0, donor_index, 0] += 0.15
+
+    score_function = ScoreFunction(context.parameter_database, torch_device)
+    score_function.set_weight(ScoreType.constraint, 1.0)
+    scorer = score_function.render_whole_pose_scoring_module(pose)
+    score_before = scorer(pose.coords).sum()
+
+    movable = torch.zeros(pose.coords.shape[:-1], dtype=torch.bool, device=pose.device)
+    movable[0, donor_index] = True
+    minimized = run_cart_min(
+        pose,
+        score_function,
+        coord_mask=movable,
+        optimizer_kwargs={"max_iter": 50},
+    )
+    score_after = scorer(minimized.coords).sum()
+
+    assert score_after < score_before
+    assert score_after < score_before * 0.05
+    assert torch.linalg.vector_norm(minimized.coords[0, donor_index] - deposited) < 0.03

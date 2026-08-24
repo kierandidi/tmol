@@ -9,7 +9,12 @@ For mmCIF input, retain `_struct_conn` records with `include_bonds=True`.
 import torch
 from biotite.structure.io.pdbx import CIFFile, get_structure
 
-from tmol import ScoreType, beta2016_score_function, setup_metal_constraints
+from tmol import (
+    ScoreType,
+    beta2016_score_function,
+    run_cart_min,
+    setup_metal_constraints,
+)
 from tmol.io import pose_stack_from_biotite
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -26,7 +31,15 @@ score_function = beta2016_score_function(
 )
 score_function.set_weight(ScoreType.constraint, 1.0)
 score = score_function.render_whole_pose_scoring_module(pose)(pose.coords).sum()
+minimized = run_cart_min(pose, score_function)
 ```
+
+The restraint targets are captured from the input coordinates, so call
+`setup_metal_constraints()` before perturbing or minimizing the site. The
+ordinary beta2016 terms and the geometry restraints are then differentiated in
+one scoring module. A Zn and a Ca regression test displaces a donor by 0.15 Å,
+minimizes it through this public path with the geometry term isolated, and
+requires the penalty to fall while the donor returns near the deposited site.
 
 The importer creates one connection and one metal virtual proxy for every
 explicit donor, supports up to eight connections, removes an attached donor

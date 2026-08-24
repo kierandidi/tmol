@@ -148,6 +148,7 @@ The remaining stages are:
 
 Current real-site tests cover 1CA2 tetrahedral Zn and a seven-coordinate 1CLL
 Ca site, including a coordinated water, exact proxy placement, finite full
-scores, gradients, and numerical PyRosetta restraint parity. Future chemistry
-coverage should add octahedral Mg, heme Fe, binuclear sites, Cys donors,
-repacking/minimization preservation, and explicit negative close-contact cases.
+scores, gradients, numerical PyRosetta restraint parity, and Cartesian recovery
+of a displaced donor. Future chemistry coverage should add octahedral Mg, heme
+Fe, binuclear sites, Cys donors, donor-aware repacking, and explicit negative
+close-contact cases.
