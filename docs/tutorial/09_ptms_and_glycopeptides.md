@@ -48,9 +48,9 @@ sugar a connection-capable residue type.
 ## Score and differentiate
 
 ```python
-from tmol import beta2016_score_function
+from tmol import carbohydrate_beta2016_score_function
 
-score_function = beta2016_score_function(
+score_function = carbohydrate_beta2016_score_function(
     device, param_db=context.parameter_database
 )
 scorer = score_function.render_whole_pose_scoring_module(pose)
@@ -128,7 +128,9 @@ Before using a deposited structure in production:
 3. Score once with gradients and require finite energy and coordinates.
 4. Include the current rotamer so repacking cannot be forced to discard a
    deposited conformation.
-5. Compare scores only within the same score function. Rosetta and TMol totals
+5. Use the carbohydrate score preset when glycans are movable so `sugar_bb`
+   guides their linkage torsions.
+6. Compare scores only within the same score function. Rosetta and TMol totals
    are not numerically interchangeable.
 
 See {doc}`the glycan guide </user_guide/glycans>` for branched topology and
