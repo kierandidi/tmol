@@ -48,3 +48,4 @@ interactive :doc:`examples <examples_index>`, use a concise
    Covalently linked glycans <user_guide/glycans>
    API <api_reference>
    Contributing <contributor_guide>
+   PTM and glycan implementation report <development/ptm_glycan_implementation>

@@ -1,12 +1,13 @@
 Examples
 ========
 
-These eight executable notebooks are in-depth demonstrations with live molecular
+The eight executable notebooks are in-depth demonstrations with live molecular
 viewers, selectable structures and atom subsets, result tables, plots, and
 exercises. For shorter, reusable recipes, see :doc:`Workflows <workflows/index>`.
 Start with Tutorials 01–03. From scoring, branch to packing (04) or
 minimization (05), then combine both in FastRelax (06). Tutorials 07 and 08
-cover specialized ligand and nucleic-acid workflows.
+cover specialized ligand and nucleic-acid workflows. A concise ninth tutorial
+covers PTMs and glycopeptides.
 
 Use the :doc:`task index <tutorial/recipe_index>` to find a maintained
 tutorial, workflow recipe, or API page for a specific operation.
@@ -27,6 +28,7 @@ that TMol does not currently implement.
    tutorial/06_fast_relax
    tutorial/07_ligand_and_params
    tutorial/08_nucleic_acids
+   tutorial/09_ptms_and_glycopeptides
 
 .. toctree::
    :hidden:

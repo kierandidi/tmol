@@ -6,6 +6,9 @@ TMol imports explicit non-polymeric bonds from a Biotite bond table when
 bonds and bond orders. This supports N-linked glycans at ASN ND2, O-linked
 glycans at SER OG or THR OG1, and branched carbohydrate trees.
 
+For a score/pack/minimize walkthrough, see {doc}`PTMs and covalently linked
+glycans </tutorial/09_ptms_and_glycopeptides>`.
+
 ```python
 from biotite.structure.io.pdbx import CIFFile, get_structure
 import torch
