@@ -11,6 +11,8 @@ import torch
 from tmol.database.chemical import Connection, Icoor
 from tmol.pose import InterResidueConnection, connect_pose_blocks
 
+METAL_RESIDUE_NAMES = frozenset({"CA", "MG", "ZN"})
+
 
 def _template(structure):
     return structure[0] if isinstance(structure, struc.AtomArrayStack) else structure
@@ -61,6 +63,10 @@ def _explicit_cross_residue_bonds(structure):
     for atom1, atom2, _bond_type in array.bonds.as_array():
         res1, res2 = int(atom_to_residue[atom1]), int(atom_to_residue[atom2])
         if res1 == res2:
+            continue
+        # Coordination bonds are allowed to reuse both metal and donor atoms;
+        # they are imported separately by ``_metal_bonds``.
+        if keys[res1][3] in METAL_RESIDUE_NAMES or keys[res2][3] in METAL_RESIDUE_NAMES:
             continue
         name1, name2 = str(array.atom_name[atom1]), str(array.atom_name[atom2])
         if _is_standard_polymer_bond(keys, res1, name1, res2, name2) or {

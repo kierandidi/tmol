@@ -65,6 +65,10 @@ atom_type_parameters:
   - { name: HNbb, *ljr: 0.901681, *ljw: 0.005000, *lkd:   0.00000, *lkl: 3.500000, *lkv:  0.000000 }
   - { name: Hwat, *ljr: 1.000000, *ljw: 0.050000, *lkd:   0.00000, *lkl: 3.500000, *lkv:  0.000000 }
   - { name: Vrt,  *ljr: 1.000000, *ljw: 0.000000, *lkd:   0.00000, *lkl: 3.500000, *lkv:  0.000000 }
+  # Rosetta fa_standard divalent-ion parameters.
+  - { name: Mg2p, *ljr: 1.185000, *ljw: 0.015000, *lkd:  -5.00000, *lkl: 3.500000, *lkv:  7.000000 }
+  - { name: Ca2p, *ljr: 1.367000, *ljw: 0.120000, *lkd:   0.00000, *lkl: 2.000000, *lkv: 10.700000 }
+  - { name: Zn2p, *ljr: 1.090000, *ljw: 0.250000, *lkd:  -5.00000, *lkl: 3.500000, *lkv:  5.400000 }
 
   # DNA atom types, from flags_opt46A.523. The DNA-specific splits of Ntrp/Nhis/
   # NH2O/Npro carry that fit's refit lk_dgfree; the protein types keep beta_nov2016.
