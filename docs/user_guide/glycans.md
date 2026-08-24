@@ -33,6 +33,37 @@ Context construction includes ligand chemistry preparation and is deliberately
 separate from per-structure pose construction. Reuse the context for an
 ensemble or trajectory with the same residue and bond topology.
 
+## Compiling Repeated Scoring
+
+For repeated scoring or minimization on one static pose topology, compile only
+the pure-PyTorch `sugar_bb` scorer and add it to ordinary beta2016. This avoids
+requiring fake/meta implementations for the native score operators while
+remaining numerically equivalent to the carbohydrate preset:
+
+```python
+from tmol import ScoreType, beta2016_score_function
+from tmol.score import ScoreFunction
+
+base = beta2016_score_function(
+    device, param_db=context.parameter_database
+).render_whole_pose_scoring_module(pose)
+sugar_function = ScoreFunction(context.parameter_database, device)
+sugar_function.set_weight(ScoreType.sugar_bb, 1.0)
+sugar = sugar_function.render_whole_pose_scoring_module(pose)
+compiled_sugar = torch.compile(
+    sugar, fullgraph=True, mode="reduce-overhead"
+)
+
+def compiled_carbohydrate_score(coords):
+    return base(coords) + 0.5 * compiled_sugar(coords)
+```
+
+Compilation is shape-specific and should be warmed before timing. On H200 the
+one-time compile cost was about 10.8 seconds. Over 200 synchronized steady-state
+iterations, this composition reduced batch-1 forward plus backward from 5.277
+to 1.953 ms and batch-32 from 5.491 to 2.024 ms, with output and coordinate
+gradients checked against the eager carbohydrate preset.
+
 ## Rosetta Comparison
 
 Rosetta's specialized carbohydrate importer requires sugar support and its PDB

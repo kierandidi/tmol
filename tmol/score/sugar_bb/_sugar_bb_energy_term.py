@@ -285,24 +285,35 @@ class SugarBBEnergyTerm(EnergyTerm):
         return eval_sugar_bb_for_rotamers
 
     def get_score_term_attributes(self, pose_stack):
-        return [
-            *pose_stack.packed_block_types.sugar_bb_params,
-            pose_stack.block_coord_offset,
+        topology = _pose_linkage_metadata(
+            pose_stack.block_type_ind,
             pose_stack.inter_residue_connections,
+            pose_stack.block_coord_offset,
+            pose_stack.coords.shape[1],
+            *pose_stack.packed_block_types.sugar_bb_params,
+        )
+        return [
+            *topology,
             *self.chi_params,
         ]
 
 
-def _linkage_metadata(
+def _pose_linkage_metadata(
     block_type,
     inter_res_conn,
+    block_coord_offset,
+    max_n_atoms,
+    child_atoms_by_bt,
     child_conn_by_bt,
     anomer_by_bt,
     is_l_by_bt,
     psi_by_conn,
     exocyclic_by_conn,
     omega_by_conn,
+    parent_atoms_by_bt,
 ):
+    """Precompute coordinate-independent linkage indices and masks."""
+
     n_poses, max_n_blocks = block_type.shape
     bt = block_type.to(torch.int64)
     real = bt >= 0
@@ -319,21 +330,45 @@ def _linkage_metadata(
     parent_conn_safe = parent_conn.clamp_min(0)
 
     anomer = anomer_by_bt.to(torch.int64)[safe]
+    child_local = child_atoms_by_bt.to(torch.int64)[safe]
+    parent_local = parent_atoms_by_bt.to(torch.int64)[parent_safe, parent_conn_safe]
     parent_exocyclic = exocyclic_by_conn[parent_safe, parent_conn_safe]
     psi_type = psi_by_conn.to(torch.int64)[parent_safe, parent_conn_safe]
     psi_type = torch.where(parent_exocyclic, anomer + 4, psi_type)
     omega_pref = omega_by_conn.to(torch.int64)[parent_safe, parent_conn_safe]
-    parent_l = is_l_by_bt[parent_safe]
+    child_index = block_coord_offset.to(torch.int64).unsqueeze(-1) + child_local
+    parent_offset = torch.gather(
+        block_coord_offset.to(torch.int64), 1, parent_block.clamp_min(0)
+    )
+    parent_index = parent_offset.unsqueeze(-1) + parent_local
+    pose_offset = torch.arange(n_poses, device=bt.device).view(n_poses, 1, 1)
+    pose_offset = pose_offset * max_n_atoms
+    child_index = (pose_offset + child_index).clamp_min(0)
+    parent_index = (pose_offset + parent_index).clamp_min(0)
+    phi_valid = (
+        valid & (child_local >= 0).all(-1) & (parent_local[..., :2] >= 0).all(-1)
+    )
+    psi_valid = phi_valid & (psi_type >= 0) & (parent_local[..., 2] >= 0)
+    omega_valid = phi_valid & (omega_pref >= 0) & (parent_local[..., 3] >= 0)
+    pose_index = torch.arange(n_poses, device=bt.device).view(n_poses, 1)
+    child_block = torch.arange(max_n_blocks, device=bt.device).view(1, max_n_blocks)
+    block_pair_index = (
+        pose_index * max_n_blocks * max_n_blocks
+        + child_block * max_n_blocks
+        + parent_block.clamp_min(0)
+    )
     return (
-        valid,
+        phi_valid,
+        psi_valid,
+        omega_valid,
         anomer,
         is_l_by_bt[safe],
         psi_type,
         omega_pref,
-        parent_l,
-        parent_block,
-        parent_safe,
-        parent_conn_safe,
+        (psi_type < 4) & is_l_by_bt[parent_safe],
+        child_index,
+        parent_index,
+        block_pair_index,
     )
 
 
@@ -345,22 +380,23 @@ def eval_sugar_bb_for_pose(
     _first_rot_block_type,
     _block_ind_for_rot,
     _pose_ind_for_rot,
-    block_type_ind_for_rot,
+    _block_type_ind_for_rot,
     _n_rots_for_pose,
     _rot_offset_for_pose,
     _n_rots_for_block,
     _rot_offset_for_block,
     _max_n_rots_per_pose,
-    bt_child_atoms,
-    bt_child_conn,
-    bt_anomer,
-    bt_is_l,
-    bt_psi_type,
-    bt_exocyclic,
-    bt_omega_pref,
-    bt_parent_atoms,
-    block_coord_offset,
-    inter_res_conn,
+    phi_valid,
+    psi_valid,
+    omega_valid,
+    anomer,
+    child_l,
+    psi_type,
+    omega_pref,
+    invert_psi,
+    child_index,
+    parent_index,
+    block_pair_index,
     chi_a,
     chi_b,
     chi_c,
@@ -368,51 +404,9 @@ def eval_sugar_bb_for_pose(
     chi_mask,
     output_block_pair_energies: bool,
 ):
-    n_poses, max_n_blocks = block_coord_offset.shape
-    block_type = block_type_ind_for_rot.view(n_poses, max_n_blocks).to(torch.int64)
-    safe = block_type.clamp_min(0)
-    (
-        valid,
-        anomer,
-        child_l,
-        psi_type,
-        omega_pref,
-        parent_l,
-        parent_block,
-        parent_bt,
-        parent_conn,
-    ) = _linkage_metadata(
-        block_type,
-        inter_res_conn,
-        bt_child_conn,
-        bt_anomer,
-        bt_is_l,
-        bt_psi_type,
-        bt_exocyclic,
-        bt_omega_pref,
-    )
-    child_local = bt_child_atoms.to(torch.int64)[safe]
-    parent_local = bt_parent_atoms.to(torch.int64)[parent_bt, parent_conn]
-    child_index = block_coord_offset.to(torch.int64).unsqueeze(-1) + child_local
-    parent_offset = torch.gather(
-        block_coord_offset.to(torch.int64), 1, parent_block.clamp_min(0)
-    )
-    parent_index = parent_offset.unsqueeze(-1) + parent_local
-    pose_offset = torch.arange(n_poses, device=rot_coords.device).view(
-        n_poses, 1, 1
-    ) * (rot_coords.shape[0] // n_poses)
-
-    def gather(index):
-        return rot_coords[(pose_offset + index).clamp_min(0).reshape(-1)].reshape(
-            *index.shape, 3
-        )
-
-    child_xyz, parent_xyz = gather(child_index), gather(parent_index)
-    phi_valid = (
-        valid & (child_local >= 0).all(-1) & (parent_local[..., :2] >= 0).all(-1)
-    )
-    psi_valid = phi_valid & (psi_type >= 0) & (parent_local[..., 2] >= 0)
-    omega_valid = phi_valid & (omega_pref >= 0) & (parent_local[..., 3] >= 0)
+    n_poses, max_n_blocks = phi_valid.shape
+    child_xyz = rot_coords[child_index.reshape(-1)].reshape(*child_index.shape, 3)
+    parent_xyz = rot_coords[parent_index.reshape(-1)].reshape(*parent_index.shape, 3)
     phi = _dihedral(
         child_xyz[..., 0, :],
         child_xyz[..., 1, :],
@@ -434,11 +428,9 @@ def eval_sugar_bb_for_pose(
         parent_xyz[..., 3, :],
         omega_valid,
     )
-    valid = phi_valid
     phi = torch.where(child_l, -phi, phi)
     psi = psi % 360.0
-    nonexocyclic = psi_type < 4
-    psi = torch.where(nonexocyclic & parent_l, 360.0 - psi, psi)
+    psi = torch.where(invert_psi, 360.0 - psi, psi)
     omega = omega % 360.0
 
     score = _chi_energy(anomer, phi, chi_a, chi_b, chi_c, chi_d, chi_mask)
@@ -452,23 +444,16 @@ def eval_sugar_bb_for_pose(
         _omega_energy(omega_pref, omega),
         torch.zeros_like(score),
     )
-    score = torch.where(valid, score, torch.zeros_like(score))
+    score = torch.where(phi_valid, score, torch.zeros_like(score))
 
     if not output_block_pair_energies:
         return score.sum(-1).unsqueeze(0), None
-    pose_index = torch.arange(n_poses, device=score.device).view(n_poses, 1)
-    child_block = torch.arange(max_n_blocks, device=score.device).view(1, max_n_blocks)
-    flat_index = (
-        pose_index * max_n_blocks * max_n_blocks
-        + child_block * max_n_blocks
-        + parent_block.clamp_min(0)
-    )
     output = torch.zeros(
         n_poses * max_n_blocks * max_n_blocks,
         dtype=score.dtype,
         device=score.device,
     )
-    output.index_add_(0, flat_index[valid], score[valid])
+    output.index_add_(0, block_pair_index[phi_valid], score[phi_valid])
     return output.view(1, n_poses, max_n_blocks, max_n_blocks), None
 
 

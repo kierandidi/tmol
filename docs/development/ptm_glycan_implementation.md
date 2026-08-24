@@ -89,6 +89,43 @@ Final validation used:
 The cold H200 pytest run took 736.59 seconds because it built all TMol CUDA
 extensions into `TORCH_EXTENSIONS_DIR`; compile time is not workflow runtime.
 
+## H200 sugar scoring profile
+
+The differentiable `sugar_bb` implementation remains ordinary PyTorch rather
+than adding an architecture-specific kernel. Nsight Systems on an H200 showed
+that its eager path was launch-bound: coordinate-independent linkage masks,
+indices, and integer casts were being rebuilt on every call. Precomputing that
+topology when the scoring module is rendered reduced code in the evaluator and
+left the Rosetta energy equations unchanged.
+
+On the ten-sugar 4BYH fixture with Torch 2.13.0 and CUDA 13.2, a sequential
+same-H200 comparison over 200 synchronized steady-state iterations gave these
+median times:
+
+| Batch | Measurement | Before (ms) | After (ms) | Change |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | `sugar_bb` forward | 1.653 | 1.174 | -29.0% |
+| 1 | `sugar_bb` forward + backward | 3.911 | 3.422 | -12.5% |
+| 1 | full carbohydrate score forward | 2.657 | 2.518 | -5.2% |
+| 1 | full carbohydrate score forward + backward | 5.372 | 5.255 | -2.2% |
+| 32 | `sugar_bb` forward | 1.704 | 1.222 | -28.3% |
+| 32 | `sugar_bb` forward + backward | 4.017 | 3.538 | -11.9% |
+
+In a 50-forward Nsight trace, eager wall time fell from 317.1 to 273.7 ms and
+integer-fill launches fell from 897 to 485. The already compiled range was
+effectively unchanged (45.56 versus 45.25 ms), which confirms that this change
+removes eager setup work rather than claiming a new arithmetic kernel. An
+isolated compiled `sugar_bb` scorer reaches about 0.10 ms forward, but compiling
+the complete score function currently stops at native terms without fake/meta
+registrations. Adding registrations across every native score operator is a
+separate compiler project and was not added to this chemistry-focused stack.
+
+The reproducible benchmark is part of the ordinary benchmark suite:
+
+```bash
+dev/bin/benchmark tmol/tests/score/sugar_bb/test_sugar_bb_benchmark.py -k cuda
+```
+
 ## Rosetta parity and intentional limits
 
 Phosphorylation and lysine-methylation atom geometry and charges follow the
