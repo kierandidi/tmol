@@ -27,5 +27,6 @@ class ScoreType(AutoNumber):
     gen_torsions = ()
     na_torsion = ()
     na_torsion_well = ()
+    sugar_bb = ()
     # keep this one last
     n_score_types = ()

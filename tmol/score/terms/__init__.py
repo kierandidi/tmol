@@ -12,6 +12,7 @@ from ._ljlk_creator import LJLKTermCreator  # noqa: F401
 from ._lk_ball_creator import LKBallTermCreator  # noqa: F401
 from ._na_torsion_creator import NaTorsionTermCreator  # noqa: F401
 from ._ref_creator import RefTermCreator  # noqa: F401
+from ._sugar_bb_creator import SugarBBTermCreator  # noqa: F401
 
 __all__ = [
     "BackboneTorsionTermCreator",
@@ -27,6 +28,7 @@ __all__ = [
     "NaTorsionTermCreator",
     "RefTermCreator",
     "ScoreTermFactory",
+    "SugarBBTermCreator",
     "TermCreator",
     "score_term_creator",
 ]
