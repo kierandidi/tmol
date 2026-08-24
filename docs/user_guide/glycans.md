@@ -70,7 +70,8 @@ Rosetta's specialized carbohydrate importer requires sugar support and its PDB
 three-letter-code mapping. For an experimental PDB with `LINK` records, use:
 
 ```bash
-python scripts/inspect_rosetta_glycan_topology.py 4BYH.pdb --score
+python scripts/inspect_rosetta_glycan_topology.py 4BYH.pdb \
+    --score --refine-chain C --rounds 100 --seed 7
 ```
 
 The equivalent Rosetta initialization flags are:
@@ -90,13 +91,51 @@ zero, matching Rosetta's `beta_nov16` weights.
 `sugar_bb` supplies Rosetta's intrinsic CHI phi/psi and exocyclic-omega
 preferences for the recognized PDB sugars. Use it for Cartesian scoring and
 minimization. Keep its weight at zero during discrete packing: TMol does not
-yet move an entire downstream glycan subtree as one linkage proposal.
+score it in the ordinary residue packer, whose rotamers do not move an entire
+downstream glycan subtree.
+
+As an end-to-end protocol reference, PyRosetta 2026.33 `GlycanSampler` in
+refinement mode (seed 7, 100 rounds, chain C selected) lowered the full 4BYH
+beta-November-2016 score from 745.565 to 710.318 and its raw `sugar_bb` sum
+from 23.9697 to 23.3291. TMol's regression uses a deterministic two-standard-
+deviation linkage perturbation instead of the stochastic Rosetta trajectory;
+it requires both the carbohydrate-aware total and raw `sugar_bb` score to
+decrease. Final coordinates and total scores are not numerical parity targets
+because the proposal schedules and the projects' other score terms differ.
+
+For discrete linkage proposals, use the statistical conformer library instead
+of the ordinary side-chain packer:
+
+```python
+import numpy as np
+
+from tmol import run_cart_min
+from tmol.glycan import sample_glycan_linkage
+
+proposal, conformer_index, angles = sample_glycan_linkage(
+    pose, pose=0, child_block=1,
+    rng=np.random.default_rng(7),
+)
+refined = run_cart_min(proposal, score_function)
+```
+
+This population-samples Rosetta's linkage means and standard deviations and
+rotates the complete downstream glycan subtree. `idealize=True` sets the exact
+library means; the default applies Rosetta's Gaussian sampling. Score several
+proposals and accept or reject them at the protocol level. This is deliberately
+separate from amino-acid rotamers, since a glycan linkage can move multiple
+residues and entire branches. The 4BYH end-to-end regression perturbs a
+library-supported linkage, minimizes all glycan atoms through this public
+path, keeps the protein fixed, and requires the carbohydrate-aware total score
+to decrease.
 
 ## Current Limits
 
 - Bonds must be explicit. TMol does not infer glycosylation from distance.
 - Input ligand atoms and bond orders must be complete enough for ligand
   preparation; PDB topology without chemistry-level bond orders is rejected.
-- The generic bonded-neighbor graph and `sugar_bb` are differentiable, but TMol
-  does not yet provide Rosetta linkage-conformer sampling, glycan-tree movers,
-  or IUPAC glycan construction.
+- The current conformer subset covers all linkages in the 4BYH validation
+  glycan. Unknown linkages return no statistical conformers; there is no silent
+  generic fallback.
+- TMol does not yet provide a complete GlycanRelax Monte Carlo driver,
+  automatic glycan-tree construction, or IUPAC glycan construction.

@@ -140,11 +140,19 @@ glycan is 12.252934 in TMol versus 12.252924 in PyRosetta 2026.33; gradients
 are finite and CPU/CUDA parity is tested. Ordinary beta2016 deliberately keeps
 this term at zero, as Rosetta's `beta_nov16` weights do.
 
-Rosetta capabilities not yet reproduced are glycan-tree construction/movers,
-linkage-conformer sampling, automatic glycan connection inference, and a
-general PTM patch library. Glycan blocks should therefore be held fixed for
-discrete packing. They can be Cartesian-minimized with `sugar_bb` when the
-deposited connectivity is trustworthy.
+The next layer ports Rosetta's population-weighted linkage conformers for all
+linkages in the 4BYH validation glycan. Its mover cuts each torsion-axis bond in
+the chemical graph and rotates the complete non-reducing-side component, so
+branched descendants move rigidly with their parent. Ideal proposals reproduce
+Rosetta's table means for phi, psi, omega, and the four-torsion ASN--NAG root
+linkage; Gaussian and one-standard-deviation uniform sampling match Rosetta's
+two stochastic modes.
+
+Rosetta capabilities not yet reproduced are the complete linkage database,
+the full GlycanRelax Monte Carlo schedule, automatic glycan connection
+inference, and a general PTM patch library. Glycans can be Cartesian-minimized
+with `sugar_bb`; discrete linkage conformers should be scored and accepted at
+the protocol level rather than passed to the ordinary residue packer.
 
 ## Metal roadmap
 
