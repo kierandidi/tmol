@@ -86,15 +86,21 @@ the Rosetta distance/angle multipliers on CPU and CUDA.
 
 ## Protein--ligand metal site
 
-RCSB 1AZM provides an end-to-end carbonic-anhydrase/acetazolamide case. Its
-mmCIF `_struct_conn` table records three histidine--Zn contacts and the
-acetazolamide N1--Zn contact. The public import path prepares the AZM ligand,
-retains all four contacts, and creates 18 geometry constraints for the active
-site. The deposited restraint energy is zero. In an H200 installed-wheel check,
-four AZM-donor displacements of 0.04--0.07 Angstrom remained finite and batched
-Cartesian minimization lowered both the full score and every restraint penalty.
-This validates preservation and local refinement of an observed metal-bound
-ligand; it does not make the restraint energy a binding-affinity estimate.
+A reproducible 6 Å active-site extraction from RCSB 1AZM provides an end-to-end
+carbonic-anhydrase/acetazolamide case. Its mmCIF `_struct_conn` table records
+three histidine--Zn contacts and the acetazolamide N1--Zn contact. The public
+import path prepares the AZM ligand, retains all four contacts, and creates 18
+geometry constraints. The deposited restraint energy is zero. In an H200
+installed-wheel check, four AZM-donor displacements of 0.04--0.07 Å remained
+finite and batched Cartesian minimization lowered both the full score and every
+restraint penalty. This validates preservation and local refinement of an
+observed metal-bound ligand; it does not make the restraint energy a
+binding-affinity estimate.
+
+The unfiltered 1AZM deposit currently stops earlier in TMol's general protein
+import path because expected protein hydrogens are absent. This is an input
+preparation limitation, not a metal-topology or metal-score failure; prepare
+missing protein hydrogens before using the complete deposited assembly.
 
 ## Deliberate limits
 
