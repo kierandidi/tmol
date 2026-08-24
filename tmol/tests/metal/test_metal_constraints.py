@@ -6,7 +6,7 @@ import torch
 from tmol import run_cart_min
 from tmol.io import pose_stack_from_biotite
 from tmol.metal import setup_metal_constraints
-from tmol.score import ScoreFunction, ScoreType
+from tmol.score import ScoreFunction, ScoreType, beta2016_score_function
 from tmol.tests.io.test_metal_bonds import _CA_SITE, _ZN_SITE, _structure
 
 
@@ -173,10 +173,16 @@ def test_metal_site_recovers_after_cartesian_minimization(torch_device, pdb_text
     pose.coords = pose.coords.clone()
     pose.coords[0, donor_index, 0] += 0.15
 
-    score_function = ScoreFunction(context.parameter_database, torch_device)
+    score_function = beta2016_score_function(
+        torch_device, param_db=context.parameter_database
+    )
     score_function.set_weight(ScoreType.constraint, 1.0)
     scorer = score_function.render_whole_pose_scoring_module(pose)
     score_before = scorer(pose.coords).sum()
+    constraint_function = ScoreFunction(context.parameter_database, torch_device)
+    constraint_function.set_weight(ScoreType.constraint, 1.0)
+    constraint_scorer = constraint_function.render_whole_pose_scoring_module(pose)
+    constraint_before = constraint_scorer(pose.coords).sum()
 
     movable = torch.zeros(pose.coords.shape[:-1], dtype=torch.bool, device=pose.device)
     movable[0, donor_index] = True
@@ -187,7 +193,8 @@ def test_metal_site_recovers_after_cartesian_minimization(torch_device, pdb_text
         optimizer_kwargs={"max_iter": 50},
     )
     score_after = scorer(minimized.coords).sum()
+    constraint_after = constraint_scorer(minimized.coords).sum()
 
     assert score_after < score_before
-    assert score_after < score_before * 0.05
+    assert constraint_after < constraint_before * 0.05
     assert torch.linalg.vector_norm(minimized.coords[0, donor_index] - deposited) < 0.03
