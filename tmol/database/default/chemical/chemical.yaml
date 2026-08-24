@@ -3900,9 +3900,9 @@ variants:
     remove_atoms: [<H1>]
     add_atoms:
     - { name: P,   atom_type: Phos }
-    - { name: O1P, atom_type: OOP }
-    - { name: O2P, atom_type: OOP }
-    - { name: O3P, atom_type: OOP }
+    - { name: O1P, atom_type: OOC }
+    - { name: O2P, atom_type: OOC }
+    - { name: O3P, atom_type: OOC }
     add_atom_aliases:
     - { name: O1P, alt_name: OP1 }
     - { name: O2P, alt_name: OP2 }
@@ -3932,9 +3932,9 @@ variants:
     remove_atoms: [<H1>]
     add_atoms:
     - { name: P,   atom_type: Phos }
-    - { name: O1P, atom_type: OOP }
-    - { name: O2P, atom_type: OOP }
-    - { name: O3P, atom_type: OOP }
+    - { name: O1P, atom_type: OOC }
+    - { name: O2P, atom_type: OOC }
+    - { name: O3P, atom_type: OOC }
     add_atom_aliases:
     - { name: O1P, alt_name: OP1 }
     - { name: O2P, alt_name: OP2 }
@@ -3964,14 +3964,14 @@ variants:
     remove_atoms: [<H1>]
     add_atoms:
     - { name: P,   atom_type: Phos }
-    - { name: O1P, atom_type: OOP }
-    - { name: O2P, atom_type: OOP }
-    - { name: O3P, atom_type: OOP }
+    - { name: O1P, atom_type: OOC }
+    - { name: O2P, atom_type: OOC }
+    - { name: O3P, atom_type: OOC }
     add_atom_aliases:
     - { name: O1P, alt_name: OP1 }
     - { name: O2P, alt_name: OP2 }
     - { name: O3P, alt_name: OP3 }
-    modify_atoms: []
+    modify_atoms: [{ name: <O1>, atom_type: OH }]
     add_connections: []
     add_bonds:
     - [<O1>, P, SINGLE, false]

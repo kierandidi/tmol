@@ -21,8 +21,8 @@ The implementation has four layers:
    to the `SER` I/O equivalence class. Backbone-dependent scoring and packing
    therefore continue to use the canonical amino-acid identity.
 2. Chemical patches add PTM atoms, bonds, internal coordinates, torsions,
-   aliases, and Rosetta-derived partial charges without duplicating full
-   residue definitions.
+   aliases, Rosetta atom types, and patch-introduced partial charges without
+   duplicating full residue definitions.
 3. Generic explicit-bond import creates same-layout connection variants for
    non-polymeric bonds in a Biotite bond table. It excludes only actual
    adjacent polymer links and disulfides already handled by the standard
@@ -89,13 +89,62 @@ Final validation used:
 The cold H200 pytest run took 736.59 seconds because it built all TMol CUDA
 extensions into `TORCH_EXTENSIONS_DIR`; compile time is not workflow runtime.
 
-## Rosetta parity and intentional limits
+## Term-level PyRosetta parity
 
-Phosphorylation and lysine-methylation atom geometry and charges follow the
-Rosetta `fa_standard` patches. Glycosylation follows Rosetta's connection
-semantics: ASN ND2, SER OG, or THR OG1 loses its attached hydrogen and gains a
-connection to the sugar anomeric atom. TMol additionally preserves the input
-branch topology explicitly instead of inferring it from distance.
+The PTM oracle uses PyRosetta 2026.33 with
+`-corrections::beta_nov16 true`. It compares the change on modifying the
+central residue of an `ALA-X-ALA` peptide, rather than absolute totals. This
+cancels known whole-score-model differences and isolates the PTM patch.
+Rosetta's separate inter- and intra-residue xover4 components are summed into
+the corresponding combined TMol score type.
+
+| Mapped term | Six-PTM result | Interpretation |
+| --- | --- | --- |
+| LJ attraction | max absolute delta 0.00245 REU (0.027%) | matched |
+| LJ repulsion | max relative delta 0.192% | matched; largest value is the highly clashing M3L ideal conformation |
+| LK solvation | max relative delta 2.41% | close, limited by global TMol/Rosetta beta atom-type parameter revisions |
+| Rama, omega, Dunbrack, reference | PTM-induced delta exactly zero | variants inherit the canonical residue model, as in Rosetta |
+| hydrogen bonds | zero in both models for the ideal oracle peptides | topology agrees; this fixture is not a nonzero hbond oracle |
+
+The audit corrected three concrete issues:
+
+- phosphate terminal oxygens now use Rosetta's `OOC` type, and PTR's ester
+  oxygen uses `OH`;
+- each methyl carbon now uses a terminal bonded hydrogen as its electrostatic
+  count-pair representative, following TMol's existing count-pair convention;
+  and
+- backbone-table lookup now uses `base_name` and preserves a missing-table
+  sentinel. Previously a modified residue missed its table and pandas
+  `iloc[-1]` silently selected the final table.
+
+The remaining discrepancies are intentional boundaries of this PR:
+
+- **Electrostatics:** TMol's established protein partial-charge table is not
+  the current Rosetta beta_nov16 table. For example, the SEP modification
+  delta is -1.110 versus -0.587 REU, and M3L is -0.153 versus -1.559 REU.
+  Changing only PTM charges would mix two charge models; changing the global
+  table would alter every protein score and requires a separate whole-protein
+  migration and benchmark.
+- **LK-ball decomposition:** total LK modification deltas are within 2.41%,
+  but `lk_ball_iso`/anisotropic components differ because TMol's global
+  LK-ball parameterization and water-site implementation are not the current
+  Rosetta beta implementation. These components must not be claimed as
+  term-identical.
+- **Absolute backbone/rotamer energies:** the PTM *delta* is correct, while
+  TMol and current Rosetta use different global Rama, omega, and Dunbrack
+  tables/implementations. Cartesian-bonded TMol terms also have no direct
+  term-for-term entry in the standard Rosetta beta_nov16 score function.
+
+Consequently total beta2016 scores are not interchangeable. Tests enforce the
+mapped PTM deltas and exact inheritance behavior instead of baking in a false
+total-score equivalence.
+
+Phosphorylation and lysine-methylation atom names, types, heavy-atom geometry,
+and patch-introduced charges follow the Rosetta `fa_standard` patches.
+Glycosylation follows Rosetta's connection semantics: ASN ND2, SER OG, or THR
+OG1 loses its attached hydrogen and gains a connection to the sugar anomeric
+atom. TMol additionally preserves the input branch topology explicitly
+instead of inferring it from distance.
 
 Rosetta capabilities not yet reproduced are carbohydrate torsion energies,
 glycan-tree construction/movers, glycan-specific rotamer sampling, automatic

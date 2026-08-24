@@ -99,16 +99,21 @@ class BackboneTorsionEnergyTerm(EnergyTerm):
         if hasattr(block_type, "backbone_torsion_params"):
             return
 
-        rname = block_type.name
+        # Chemical variants inherit their base amino acid's backbone tables.
+        # Missing lookups must remain disabled rather than indexing the final
+        # table through pandas' ``iloc[-1]`` behavior.
+        rname = block_type.base_name
         lookups = numpy.array([[rname, "_"], [rname, "PRO"]], dtype=object)
-        rama_table_inds = self.param_resolver.rama_lookup.index.get_indexer(lookups)
-        rama_table_inds = self.param_resolver.rama_lookup.iloc[rama_table_inds, :][
-            "table_id"
-        ].values
-        omega_table_inds = self.param_resolver.omega_lookup.index.get_indexer(lookups)
-        omega_table_inds = self.param_resolver.omega_lookup.iloc[omega_table_inds, :][
-            "table_id"
-        ].values
+
+        def table_indices(lookup):
+            rows = lookup.index.get_indexer(lookups)
+            result = numpy.full(2, -1, dtype=numpy.int32)
+            found = rows != -1
+            result[found] = lookup.iloc[rows[found], :]["table_id"].values
+            return result
+
+        rama_table_inds = table_indices(self.param_resolver.rama_lookup)
+        omega_table_inds = table_indices(self.param_resolver.omega_lookup)
 
         backbone_torsion_atoms = numpy.full((3, 4), -1, dtype=uaid_t)
         if rama_table_inds[0] != -1 or rama_table_inds[1] != -1:

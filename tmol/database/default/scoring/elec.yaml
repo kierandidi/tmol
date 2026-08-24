@@ -183,6 +183,24 @@ atom_cp_reps_parameters:
   - { *r: TYR ,*ai: N, *ao: H }
   - { *r: TYR ,*ai: C, *ao: O }
   - { *r: TYR ,*ai: OH, *ao: HH }
+  - { *r: LYS:monomethylated ,*ai: CM,  *ao: HCM1 }
+  - { *r: LYS:monomethylated ,*ai: CM,  *ao: HCM2 }
+  - { *r: LYS:monomethylated ,*ai: CM,  *ao: HCM3 }
+  - { *r: LYS:dimethylated ,*ai: CH1, *ao: HH11 }
+  - { *r: LYS:dimethylated ,*ai: CH1, *ao: HH12 }
+  - { *r: LYS:dimethylated ,*ai: CH1, *ao: HH13 }
+  - { *r: LYS:dimethylated ,*ai: CH2, *ao: HH21 }
+  - { *r: LYS:dimethylated ,*ai: CH2, *ao: HH22 }
+  - { *r: LYS:dimethylated ,*ai: CH2, *ao: HH23 }
+  - { *r: LYS:trimethylated ,*ai: CM1, *ao: HM11 }
+  - { *r: LYS:trimethylated ,*ai: CM1, *ao: HM12 }
+  - { *r: LYS:trimethylated ,*ai: CM1, *ao: HM13 }
+  - { *r: LYS:trimethylated ,*ai: CM2, *ao: HM21 }
+  - { *r: LYS:trimethylated ,*ai: CM2, *ao: HM22 }
+  - { *r: LYS:trimethylated ,*ai: CM2, *ao: HM23 }
+  - { *r: LYS:trimethylated ,*ai: CM3, *ao: HM31 }
+  - { *r: LYS:trimethylated ,*ai: CM3, *ao: HM32 }
+  - { *r: LYS:trimethylated ,*ai: CM3, *ao: HM33 }
   - { *r: VAL:cterm ,*ai: C, *ao: O }
   - { *r: VAL:cterm ,*ai: C, *ao: OXT }
   - { *r: VAL:nterm ,*ai: N, *ao: H1 }
