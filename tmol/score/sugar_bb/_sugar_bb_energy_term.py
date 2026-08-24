@@ -78,15 +78,10 @@ _SUGARS = {
 }
 
 
-def _dihedral(p0, p1, p2, p3, valid):
+def _dihedral(p0, p1, p2, p3, valid, reference):
     # Some packed entries are padding or linkages without psi/omega atoms.
     # Replace those coordinates before doing any vector algebra: masking only
     # the final energy still lets undefined norm gradients leak through as NaN.
-    reference = torch.tensor(
-        ((1.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 1.0, 1.0)),
-        dtype=p0.dtype,
-        device=p0.device,
-    )
     p0 = torch.where(valid.unsqueeze(-1), p0, reference[0])
     p1 = torch.where(valid.unsqueeze(-1), p1, reference[1])
     p2 = torch.where(valid.unsqueeze(-1), p2, reference[2])
@@ -213,6 +208,18 @@ class SugarBBEnergyTerm(EnergyTerm):
             torch.tensor(value, dtype=torch.float32, device=device)
             for value in (*arrays, intercept, mask)
         )
+        # CUDA Graph capture cannot copy a newly constructed CPU constant to
+        # the device from inside the score call.
+        self.dihedral_reference = torch.tensor(
+            (
+                (1.0, 0.0, 0.0),
+                (0.0, 0.0, 0.0),
+                (0.0, 1.0, 0.0),
+                (0.0, 1.0, 1.0),
+            ),
+            dtype=torch.float32,
+            device=device,
+        )
 
     @classmethod
     def class_name(cls):
@@ -295,6 +302,7 @@ class SugarBBEnergyTerm(EnergyTerm):
         return [
             *topology,
             *self.chi_params,
+            self.dihedral_reference,
         ]
 
 
@@ -402,6 +410,7 @@ def eval_sugar_bb_for_pose(
     chi_c,
     chi_d,
     chi_mask,
+    dihedral_reference,
     output_block_pair_energies: bool,
 ):
     n_poses, max_n_blocks = phi_valid.shape
@@ -413,6 +422,7 @@ def eval_sugar_bb_for_pose(
         parent_xyz[..., 0, :],
         parent_xyz[..., 1, :],
         phi_valid,
+        dihedral_reference,
     )
     psi = _dihedral(
         child_xyz[..., 1, :],
@@ -420,6 +430,7 @@ def eval_sugar_bb_for_pose(
         parent_xyz[..., 1, :],
         parent_xyz[..., 2, :],
         psi_valid,
+        dihedral_reference,
     )
     omega = _dihedral(
         parent_xyz[..., 0, :],
@@ -427,6 +438,7 @@ def eval_sugar_bb_for_pose(
         parent_xyz[..., 2, :],
         parent_xyz[..., 3, :],
         omega_valid,
+        dihedral_reference,
     )
     phi = torch.where(child_l, -phi, phi)
     psi = psi % 360.0
