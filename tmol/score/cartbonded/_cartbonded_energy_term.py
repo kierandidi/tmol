@@ -124,11 +124,20 @@ class CartBondedEnergyTerm(AtomTypeDependentTerm):
                     for atom1, atom2, atom4 in comb:
                         improper.append((atom1, atom2, atom3, atom4))
 
-        return (
-            lengths,
-            angles,
-            torsions,
-            improper,
+        virtual = {
+            block_type.atom_to_idx[name] for name in block_type.properties.virtual
+        }
+
+        def without_virtual(subgraphs):
+            return [
+                graph
+                for graph in subgraphs
+                if virtual.isdisjoint(atom for atom in graph if atom >= 0)
+            ]
+
+        return tuple(
+            without_virtual(subgraphs)
+            for subgraphs in (lengths, angles, torsions, improper)
         )
 
     def get_raw_params_for_res(self, res: str):
@@ -226,9 +235,7 @@ class CartBondedEnergyTerm(AtomTypeDependentTerm):
             setattr(block_type, "cartbonded_annotations", {})
         block_type.cartbonded_annotations[self.hash] = cb_block_ann
 
-    def setup_packed_block_types(
-        self, packed_block_types: PackedBlockTypes
-    ):  # noqa: C901
+    def setup_packed_block_types(self, packed_block_types: PackedBlockTypes):  # noqa: C901
         super(CartBondedEnergyTerm, self).setup_packed_block_types(packed_block_types)
 
         if not hasattr(packed_block_types, "cartbonded_is_fragment"):
@@ -326,7 +333,6 @@ class CartBondedEnergyTerm(AtomTypeDependentTerm):
         # Fill the hash table
         cur_val = 0
         for bt in packed_block_types.active_block_types:
-
             bt_params = bt.cartbonded_annotations[self.hash]
             for key_w_str, value in bt_params.cartbonded_params.items():
                 key = tuple(cbet_atom_unique_id_index[at] for at in key_w_str)
