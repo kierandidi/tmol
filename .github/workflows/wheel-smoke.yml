@@ -2,6 +2,12 @@ name: Wheel smoke test
 
 on:
   workflow_dispatch:
+    inputs:
+      colab-cp313-only:
+        description: Build only the missing v0.1.52 Colab CPython 3.13 wheel
+        required: false
+        type: boolean
+        default: false
   push:
     branches:
       - fix/torch-2.13-wheels
@@ -14,6 +20,7 @@ concurrency:
 jobs:
   build:
     name: ${{ matrix.label }}
+    if: inputs.colab-cp313-only != true
     strategy:
       fail-fast: false
       matrix:
@@ -599,3 +606,20 @@ jobs:
           print("torch", torch.__version__, "cuda", torch.version.cuda)
           PY
             '
+
+  backfill-colab-cp313:
+    name: "v0.1.52 py3.13 pt2.11 Colab cu128"
+    if: inputs.colab-cp313-only == true
+    uses: ./.github/workflows/_build_wheel.yml
+    with:
+      runs-on: ubuntu-22.04
+      container-image: nvcr.io/nvidia/pytorch:25.02-py3
+      torch-version: "2.11"
+      torch-package-version: "2.11.0"
+      python-version: "3.13"
+      label: "v0.1.52 py3.13 pt2.11 Colab cu128"
+      pip-torch-cuda-url: "https://download.pytorch.org/whl/cu128"
+      enable-cuda: true
+      cuda-archs: "75;80;89"
+      use-manylinux-build: true
+      target-arch: x86_64
