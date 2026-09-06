@@ -19,6 +19,7 @@ The comparable quantities are workload latency and throughput.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import math
 import os
@@ -105,6 +106,7 @@ class Workload:
 
 
 def _tmol_workload(args: argparse.Namespace) -> Workload:
+    import attrs
     import torch
     import tmol
 
@@ -115,7 +117,7 @@ def _tmol_workload(args: argparse.Namespace) -> Workload:
 
     from tmol.database import ParameterDatabase
     from tmol.io import pose_stack_from_pdb
-    from tmol.optimization import run_cart_min
+    from tmol.optimization import CartesianMinimizer, run_cart_min
     from tmol.pack import PackerPalette, PackerTask, pack_rotamers
     from tmol.pack.rotamer import FixedAAChiSampler, IncludeCurrentSampler
     from tmol.pack.rotamer.dunbrack import create_dunbrack_sampler_from_database
@@ -169,17 +171,31 @@ def _tmol_workload(args: argparse.Namespace) -> Workload:
             return coords.grad
 
     elif args.workflow == "cart-min":
+        reusable_minimizer = (
+            CartesianMinimizer(cuda_graph=args.cuda_graph)
+            if args.reuse_topology
+            else None
+        )
 
         def run(_: int):
-            return run_cart_min(
-                pose.clone(),
-                score_function,
-                optimizer_kwargs={
+            kwargs = {
+                "optimizer_kwargs": {
                     "max_iter": args.protocol_iterations,
                     "gradtol": 0.0,
                     "atol": 0.0,
                     "rtol": 0.0,
-                },
+                }
+            }
+            if reusable_minimizer is not None:
+                # Copy changing coordinates while retaining immutable topology
+                # object identity, as repeated inference protocols normally do.
+                input_pose = attrs.evolve(pose, coords=pose.coords.detach().clone())
+                return reusable_minimizer(input_pose, score_function, **kwargs)
+            return run_cart_min(
+                pose.clone(),
+                score_function,
+                cuda_graph=args.cuda_graph,
+                **kwargs,
             )
 
     elif args.workflow == "repack":
@@ -211,6 +227,8 @@ def _tmol_workload(args: argparse.Namespace) -> Workload:
                 torch.cuda.get_device_name(device) if device.type == "cuda" else None
             ),
             "score_function": "beta2016",
+            "reuse_topology": args.reuse_topology,
+            "cuda_graph": args.cuda_graph,
             "n_residues": int(pose.n_res_per_pose[0]),
             "n_atoms": int(pose.coords.shape[1]),
         },
@@ -434,19 +452,129 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup", type=int, default=3)
     parser.add_argument("--repeats", type=int, default=20)
     parser.add_argument("--protocol-iterations", type=int, default=10)
+    parser.add_argument(
+        "--reuse-topology",
+        action="store_true",
+        help="reuse TMol's rendered Cartesian network between minimizations",
+    )
+    parser.add_argument(
+        "--cuda-graph",
+        action="store_true",
+        help="capture TMol Cartesian score/gradient replay (CUDA only)",
+    )
     parser.add_argument("--pyrosetta-root", type=Path)
     parser.add_argument("--rosetta-bin-dir", type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--profile-dir",
+        type=Path,
+        help="write a TMol PyTorch operator profile and Chrome trace",
+    )
+    parser.add_argument("--profile-repeats", type=int, default=1)
+    parser.add_argument(
+        "--profile-stacks",
+        action="store_true",
+        help="record Python stacks in the optional operator profile",
+    )
     args = parser.parse_args()
-    if min(args.batch, args.threads, args.repeats, args.protocol_iterations) < 1:
+    if (
+        min(
+            args.batch,
+            args.threads,
+            args.repeats,
+            args.protocol_iterations,
+            args.profile_repeats,
+        )
+        < 1
+    ):
         parser.error(
-            "batch, threads, repeats, and protocol-iterations must be positive"
+            "batch, threads, repeats, protocol-iterations, and profile-repeats "
+            "must be positive"
         )
     if args.warmup < 0:
         parser.error("warmup must be non-negative")
     if not args.pdb.is_file():
         parser.error(f"PDB does not exist: {args.pdb}")
+    if args.reuse_topology and not (
+        args.engine == "tmol" and args.workflow == "cart-min"
+    ):
+        parser.error("--reuse-topology is supported only for TMol cart-min")
+    if args.cuda_graph and not (
+        args.engine == "tmol" and args.workflow == "cart-min" and args.device == "cuda"
+    ):
+        parser.error("--cuda-graph requires TMol cart-min on CUDA")
+    if args.profile_dir is not None and args.engine != "tmol":
+        parser.error("--profile-dir currently supports TMol only")
     return args
+
+
+def _profile_workload(workload: Workload, args: argparse.Namespace) -> None:
+    """Write an operator-level CPU/CUDA profile for the measured workload."""
+    import torch
+
+    assert args.profile_dir is not None
+    args.profile_dir.mkdir(parents=True, exist_ok=True)
+    activities = [torch.profiler.ProfilerActivity.CPU]
+    if args.device == "cuda":
+        activities.append(torch.profiler.ProfilerActivity.CUDA)
+
+    with torch.profiler.profile(
+        activities=activities,
+        record_shapes=True,
+        profile_memory=True,
+        with_stack=args.profile_stacks,
+    ) as profile:
+        for iteration in range(args.profile_repeats):
+            workload.synchronize()
+            with torch.profiler.record_function("benchmark_iteration"):
+                result = workload.run(iteration)
+            workload.synchronize()
+            if result is None:
+                raise RuntimeError("profiled workload returned no result")
+
+    profile.export_chrome_trace(str(args.profile_dir / "trace.json"))
+    events = profile.key_averages(group_by_input_shape=True)
+    fields = (
+        "key",
+        "count",
+        "self_cpu_time_total",
+        "cpu_time_total",
+        "self_device_time_total",
+        "device_time_total",
+        "self_cpu_memory_usage",
+        "self_device_memory_usage",
+        "input_shapes",
+    )
+    with (args.profile_dir / "operators.csv").open("w", newline="") as output:
+        writer = csv.DictWriter(output, fieldnames=fields)
+        writer.writeheader()
+        for event in events:
+            writer.writerow({field: getattr(event, field, None) for field in fields})
+    sort_by = (
+        "self_device_time_total" if args.device == "cuda" else "self_cpu_time_total"
+    )
+    (args.profile_dir / "operators.txt").write_text(
+        events.table(sort_by=sort_by, row_limit=100) + "\n"
+    )
+    (args.profile_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "engine": args.engine,
+                "workflow": args.workflow,
+                "device": args.device,
+                "batch": args.batch,
+                "threads": args.threads,
+                "protocol_iterations": args.protocol_iterations,
+                "profile_repeats": args.profile_repeats,
+                "reuse_topology": args.reuse_topology,
+                "cuda_graph": args.cuda_graph,
+                "engine_metadata": workload.metadata,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
 
 
 def main() -> None:
@@ -465,9 +593,13 @@ def main() -> None:
     workload = builders[args.engine](args)
     ready_seconds = time.perf_counter() - process_start
 
+    warmup_samples = []
     for iteration in range(args.warmup):
+        workload.synchronize()
+        warmup_start = time.perf_counter()
         workload.run(iteration)
-    workload.synchronize()
+        workload.synchronize()
+        warmup_samples.append(time.perf_counter() - warmup_start)
 
     samples = []
     for iteration in range(args.repeats):
@@ -480,7 +612,7 @@ def main() -> None:
             raise RuntimeError("workload returned no result")
 
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "benchmark_revision": _git_revision(),
         "engine": args.engine,
         "workflow": args.workflow,
@@ -493,6 +625,8 @@ def main() -> None:
         "protocol_iterations": args.protocol_iterations,
         "process_ready_seconds": ready_seconds,
         "workload_setup_seconds": workload.setup_seconds,
+        "first_call_seconds": warmup_samples[0] if warmup_samples else None,
+        "warmup_samples_seconds": warmup_samples,
         "timing": _timing_summary(samples, args.batch),
         "samples_seconds": samples,
         "host": _host_metadata(),
@@ -503,6 +637,8 @@ def main() -> None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(rendered + "\n")
     print(rendered)
+    if args.profile_dir is not None:
+        _profile_workload(workload, args)
 
 
 if __name__ == "__main__":

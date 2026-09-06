@@ -84,6 +84,34 @@ minimization and packing calls exercise the Rosetta C++ core through Python;
 when licensed Rosetta applications are installed, `--engine rosetta` can also
 measure end-to-end `score_jd2` process latency with `--rosetta-bin-dir`.
 
+Never infer batch scaling from a single-pose core-scaling result. In
+particular, a batch-1 Cartesian minimization comparison says nothing about
+TMol's segmented batched minimizer versus PyRosetta's serial pose loop. Sweep
+batch size for each workflow and label both dimensions in summary tables.
+
+Cartesian minimization has two intentionally separate TMol modes:
+
+- The default runner measures the one-shot `run_cart_min` API, including
+  topology-dependent scorer rendering on every timed call.
+- `--reuse-topology` retains the rendered scorer between compatible calls and
+  measures the steady-state path used by repeated inference protocols. On
+  CUDA, combine it with `--cuda-graph` to amortize graph capture and reduce
+  launch overhead. Do not use `--cuda-graph` for a one-off call without also
+  reporting its larger cold-call cost.
+
+The JSON distinguishes `workload_setup_seconds`, `first_call_seconds`, warm-up
+samples, and steady-state timing. Throughput comparisons must say which of
+these costs they include. For direct application code, reuse a minimizer when
+pose topology is stable:
+
+```python
+from tmol.optimization import CartesianMinimizer
+
+minimize = CartesianMinimizer(cuda_graph=pose_stack.device.type == "cuda")
+for pose_stack in same_topology_pose_stacks:
+    result = minimize(pose_stack, score_function)
+```
+
 Collect separate JSON records at each allocated core count, then generate
 latency, speedup, parallel-efficiency, and TMol-versus-competitor plots:
 
@@ -97,10 +125,24 @@ Keep single-pose scaling separate from independent-pose batch throughput:
 PyRosetta and many Rosetta applications do not parallelize one ordinary
 `ScoreFunction` evaluation merely because more threads were allocated.
 
+For a batch-size sweep, generate throughput, per-pose latency, total latency,
+and cold-to-steady-state plots with:
+
+```bash
+python dev/benchmarks/plot_batch_scaling.py results/batches \
+  --output-dir results/batch-plots
+```
+
 For TMol CUDA runs, pass `--device cuda`. The runner synchronizes the selected
 device immediately around every timed iteration so the reported time includes
 completed kernel work rather than asynchronous launch latency. Rosetta and
 PyRosetta runs accept CPU only.
+
+Add `--profile-dir profile/score-b32` to a TMol invocation for an operator CSV,
+a readable top-100 table, metadata, and a Chrome trace. Profiling is performed
+after normal timing so profiler instrumentation does not contaminate the
+reported latency. Use `--profile-repeats` sparingly because shape and memory
+recording are intentionally detailed.
 
 When measuring throughput scaling for independent structures, run one
 single-threaded worker per allocated core for both engines. Aggregate those

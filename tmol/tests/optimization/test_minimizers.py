@@ -1,6 +1,7 @@
 import torch
 
 from tmol import (
+    CartesianMinimizer,
     PoseStack,
     run_cart_min,
     run_kin_min,
@@ -9,6 +10,7 @@ from tmol import (
     FoldForest,
     MoveMap,
 )
+import attrs
 
 
 def test_build_kinforest_sfxn_network_smoke(
@@ -66,6 +68,24 @@ def test_run_cart_min_smoke(
     end_score = wpsm(minimized_pose_stack.coords)
 
     assert torch.all(end_score < start_score)
+
+
+def test_cartesian_minimizer_reuses_compatible_network(
+    jagged_stack_of_465_res_ubqs: PoseStack,
+    torch_device,
+):
+    pose_stack = jagged_stack_of_465_res_ubqs
+    sfxn = beta2016_score_function(torch_device)
+    minimizer = CartesianMinimizer(cuda_graph=torch_device.type == "cuda")
+    kwargs = {"max_iter": 1, "gradtol": 0.0, "atol": 0.0, "rtol": 0.0}
+
+    first = minimizer(pose_stack, sfxn, optimizer_kwargs=kwargs)
+    network = minimizer.network
+    assert network is not None
+    second_input = attrs.evolve(pose_stack, coords=first.coords.clone())
+    minimizer(second_input, sfxn, optimizer_kwargs=kwargs)
+
+    assert minimizer.network is network
 
 
 def test_run_kin_min_torch_lbfgs(

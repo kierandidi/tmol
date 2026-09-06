@@ -276,14 +276,14 @@ struct detect_rot_neighbors {
 
       if (rot_ind1 >= n_rots_for_pose[pose_ind]
           || rot_ind2 >= n_rots_for_pose[pose_ind]) {
-        if constexpr (D == Device::CUDA) {
+        if (D == Device::CUDA) {
           rot_neighbors[pose_ind][rot_ind1][rot_ind2] = 0;
         }
         return;
       }
 
       if (rot_ind1 > rot_ind2) {
-        if constexpr (D == Device::CUDA) {
+        if (D == Device::CUDA) {
           rot_neighbors[pose_ind][rot_ind1][rot_ind2] = 0;
         }
         return;
@@ -298,7 +298,7 @@ struct detect_rot_neighbors {
       bool same_rot = rot_ind1 == rot_ind2;
       bool same_block = block_ind1 == block_ind2;
       if (same_block && !same_rot) {
-        if constexpr (D == Device::CUDA) {
+        if (D == Device::CUDA) {
           rot_neighbors[pose_ind][rot_ind1][rot_ind2] = 0;
         }
         return;
@@ -306,14 +306,14 @@ struct detect_rot_neighbors {
 
       int const block_type1 = block_type_ind_for_rot[global_rot_ind1];
       if (block_type1 < 0) {
-        if constexpr (D == Device::CUDA) {
+        if (D == Device::CUDA) {
           rot_neighbors[pose_ind][rot_ind1][rot_ind2] = 0;
         }
         return;
       }
       int const block_type2 = block_type_ind_for_rot[global_rot_ind2];
       if (block_type2 < 0) {
-        if constexpr (D == Device::CUDA) {
+        if (D == Device::CUDA) {
           rot_neighbors[pose_ind][rot_ind1][rot_ind2] = 0;
         }
         return;
@@ -339,7 +339,7 @@ struct detect_rot_neighbors {
       // is faster there.
       if (d2 < d_threshold * d_threshold) {
         rot_neighbors[pose_ind][rot_ind1][rot_ind2] = 1;
-      } else if constexpr (D == Device::CUDA) {
+      } else if (D == Device::CUDA) {
         rot_neighbors[pose_ind][rot_ind1][rot_ind2] = 0;
       }
     });
@@ -375,7 +375,7 @@ struct detect_block_neighbors {
       int const block_ind2 = pair % max_n_blocks;
 
       if (block_ind1 > block_ind2) {
-        if constexpr (D == Device::CUDA) {
+        if (D == Device::CUDA) {
           block_neighbors[pose_ind][block_ind1][block_ind2] = 0;
         }
         return;
@@ -383,14 +383,14 @@ struct detect_block_neighbors {
 
       int const block_type1 = pose_stack_block_type[pose_ind][block_ind1];
       if (block_type1 < 0) {
-        if constexpr (D == Device::CUDA) {
+        if (D == Device::CUDA) {
           block_neighbors[pose_ind][block_ind1][block_ind2] = 0;
         }
         return;
       }
       int const block_type2 = pose_stack_block_type[pose_ind][block_ind2];
       if (block_type2 < 0) {
-        if constexpr (D == Device::CUDA) {
+        if (D == Device::CUDA) {
           block_neighbors[pose_ind][block_ind1][block_ind2] = 0;
         }
         return;
@@ -416,7 +416,7 @@ struct detect_block_neighbors {
       // is faster there.
       if (d2 < d_threshold * d_threshold) {
         block_neighbors[pose_ind][block_ind1][block_ind2] = 1;
-      } else if constexpr (D == Device::CUDA) {
+      } else if (D == Device::CUDA) {
         block_neighbors[pose_ind][block_ind1][block_ind2] = 0;
       }
     });

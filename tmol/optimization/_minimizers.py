@@ -192,6 +192,57 @@ def run_kin_min(
     )
 
 
+class CartesianMinimizer:
+    """Reusable Cartesian minimizer for pose stacks with stable topology.
+
+    Rendering a score function builds topology-dependent tensors and, when
+    requested, captures a CUDA graph.  Those are setup costs rather than part
+    of the numerical minimization.  This class retains that rendered network
+    across calls and resets only its coordinates when the score function,
+    topology, shape, and coordinate mask remain compatible.
+
+    Create one instance per reusable workflow.  A topology or score-function
+    change is detected automatically and safely rebuilds the network.
+
+    Args:
+        cuda_graph: Capture and replay the fixed-shape CUDA forward/backward
+            score path.  This has a one-time setup and memory cost and requires
+            CUDA, so it is most useful when the instance will be reused.
+    """
+
+    def __init__(self, cuda_graph: bool = False):
+        self.cuda_graph = cuda_graph
+        self.network: CartesianSfxnNetwork | None = None
+
+    def __call__(
+        self,
+        pose_stack: PoseStack,
+        sfxn: ScoreFunction,
+        coord_mask: Tensor[torch.bool][:, :] | None = None,
+        optimizer_cls: type[torch.optim.Optimizer] = LBFGS_Armijo,
+        optimizer_kwargs: dict[str, object] | None = None,
+        verbose: bool = False,
+    ) -> PoseStack:
+        """Minimize one pose stack, reusing compatible rendered state."""
+        from tmol.optimization import CartesianSfxnNetwork
+
+        if self.network is None or not self.network._reset(
+            sfxn, pose_stack, coord_mask
+        ):
+            self.network = CartesianSfxnNetwork(
+                sfxn,
+                pose_stack,
+                coord_mask,
+                cuda_graph="forward_backward" if self.cuda_graph else False,
+            )
+        return run_min(
+            self.network,
+            optimizer_cls=optimizer_cls,
+            optimizer_kwargs=optimizer_kwargs,
+            verbose=verbose,
+        )
+
+
 def run_cart_min(
     pose_stack: PoseStack,
     sfxn: ScoreFunction,
@@ -217,17 +268,10 @@ def run_cart_min(
     Returns:
         A new pose stack containing the minimized coordinates.
     """
-    from tmol.optimization import CartesianSfxnNetwork
-
-    cart_network = CartesianSfxnNetwork(
-        sfxn,
+    return CartesianMinimizer(cuda_graph=cuda_graph)(
         pose_stack,
-        coord_mask,
-        cuda_graph="forward_backward" if cuda_graph else False,
-    )
-
-    return run_min(
-        cart_network,
+        sfxn,
+        coord_mask=coord_mask,
         optimizer_cls=optimizer_cls,
         optimizer_kwargs=optimizer_kwargs,
         verbose=verbose,
