@@ -102,6 +102,26 @@ device immediately around every timed iteration so the reported time includes
 completed kernel work rather than asynchronous launch latency. Rosetta and
 PyRosetta runs accept CPU only.
 
+When measuring throughput scaling for independent structures, run one
+single-threaded worker per allocated core for both engines. Aggregate those
+worker records separately from within-call scaling with:
+
+```bash
+python dev/benchmarks/plot_process_scaling.py \
+  --tmol results/tmol-processes --pyrosetta results/pyrosetta-processes \
+  --output-dir results/process-plots
+```
+
+For implementation work, collect at least two interleaved processes for the
+unchanged baseline and candidate, then plot their median-of-process medians:
+
+```bash
+python dev/benchmarks/plot_tmol_ab.py \
+  --baseline results/baseline-*.json \
+  --candidate results/candidate-*.json \
+  --candidate-label neighbor-scratch --output-dir results/ab-plots
+```
+
 ## Profiling
 
 `dev/bin/profile_benchmark` runs a short pytest benchmark under Nsight Systems
