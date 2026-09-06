@@ -1660,9 +1660,9 @@ auto LJLKRotamerScoreDispatch<DeviceOperations, D, Real, Int>::forward(
   auto dV_dcoords_t = TPack<Vec<Real, 3>, 2, D>::zeros({3, n_atoms});
   auto dV_dcoords = dV_dcoords_t.view;
 
-  auto scratch_rot_spheres_t =
-      D == Device::CPU ? TPack<Real, 2, D>::zeros({n_rots, 4})
-                       : TPack<Real, 2, D>::empty({n_rots, 4});
+  auto scratch_rot_spheres_t = D == Device::CPU
+                                   ? TPack<Real, 2, D>::zeros({n_rots, 4})
+                                   : TPack<Real, 2, D>::empty({n_rots, 4});
   auto scratch_rot_spheres = scratch_rot_spheres_t.view;
 
   auto scratch_block_spheres_t =

@@ -1219,9 +1219,9 @@ class LKBallRotamerScoreDispatch {
     assert(block_type_path_distance.size(1) == max_n_block_atoms);
     assert(block_type_path_distance.size(2) == max_n_block_atoms);
 
-    auto scratch_rot_spheres_t =
-        Dev == Device::CPU ? TPack<Real, 2, Dev>::zeros({n_rots, 4})
-                           : TPack<Real, 2, Dev>::empty({n_rots, 4});
+    auto scratch_rot_spheres_t = Dev == Device::CPU
+                                     ? TPack<Real, 2, Dev>::zeros({n_rots, 4})
+                                     : TPack<Real, 2, Dev>::empty({n_rots, 4});
     auto scratch_rot_spheres = scratch_rot_spheres_t.view;
 
     auto scratch_block_spheres_t =

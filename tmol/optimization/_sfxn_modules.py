@@ -149,9 +149,9 @@ class CartesianSfxnNetwork(torch.nn.Module):
             full_coords = self.masked_coords.detach().view_as(self.full_coords).clone()
             return attrs.evolve(self.pose_stack, coords=full_coords)
         full_coords = self.full_coords.detach().clone()
-        full_coords.view(-1, full_coords.shape[-1])[self._coord_flat_idx] = (
-            self.masked_coords.detach()
-        )
+        full_coords.view(-1, full_coords.shape[-1])[
+            self._coord_flat_idx
+        ] = self.masked_coords.detach()
         return attrs.evolve(self.pose_stack, coords=full_coords)
 
 

@@ -1233,9 +1233,9 @@ auto HBondRotamerScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
   auto dV_dcoords_t = TPack<Vec<Real, 3>, 2, Dev>::zeros({1, n_atoms});
   auto dV_dcoords = dV_dcoords_t.view;
 
-  auto scratch_rot_spheres_t =
-      Dev == Device::CPU ? TPack<Real, 2, Dev>::zeros({n_rots, 4})
-                         : TPack<Real, 2, Dev>::empty({n_rots, 4});
+  auto scratch_rot_spheres_t = Dev == Device::CPU
+                                   ? TPack<Real, 2, Dev>::zeros({n_rots, 4})
+                                   : TPack<Real, 2, Dev>::empty({n_rots, 4});
   auto scratch_rot_spheres = scratch_rot_spheres_t.view;
 
   auto scratch_block_spheres_t =
