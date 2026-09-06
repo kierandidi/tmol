@@ -168,6 +168,19 @@ other launches. Prefer graph replay when inputs have stable shapes and storage;
 prefer eager mode for dynamic control flow, changing shapes, or one-off calls
 where capture cost cannot be amortized.
 
+The Cartesian minimizer illustrates why both techniques matter. Its rendered
+score-and-gradient evaluation can use graph replay, but its Armijo line search
+has data-dependent control flow and stays eager. TMol implements the four
+groups of per-segment Armijo state transitions as compiled CPU/CUDA kernels;
+the score call remains between those kernels and can still be graph-captured.
+On an H200 reference run with one 43-residue pose and five fixed iterations,
+this fusion reduced one eager minimization from 1,798 to 1,422 physical CUDA
+kernels and from 8,101 to 7,255 CPU operator events. The synchronized batch-1
+latency improved by 16.7% in eager mode and 8.7% with graph replay. At batch
+128 the corresponding gains were 1.4% and 1.8%, because device computation
+already dominated. Treat these figures as a launch-structure example, not as
+a portable performance guarantee.
+
 Compare event counts from two or more Chrome traces with:
 
 ```bash

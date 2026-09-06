@@ -4,6 +4,13 @@ from typing import Any
 import torch
 from torch.optim import Optimizer
 
+from tmol.optimization._armijo_compiled import (
+    armijo_classify,
+    armijo_start,
+    armijo_trial,
+    armijo_update,
+)
+
 
 def lbfgs_two_loop(grad, dirs, stps):
     """L-BFGS search direction H_k @ grad via the compact
@@ -139,60 +146,44 @@ def armijo_linesearch_segmented(
               * 'factor' corresponds roughly to 'beta' in the text (see point 1)
     """
     phi0 = old_fval
-    zeros = torch.zeros_like(alpha0)
-    alpha = torch.where(searching, alpha0, zeros)
-    # no step until one is accepted, so a rejected trial is never applied
-    accepted = zeros.clone()
-    phi_accepted = phi0.clone()
-    status = torch.full(alpha0.shape, _LS_DONE, dtype=torch.int64, device=alpha0.device)
+    alpha = armijo_start(searching, alpha0)
 
     phi = func(alpha)
     n_evals = 1
 
     # sigma_increase > sigma_decrease, so a linear-looking step also has
     # sufficient decrease; it is the one case where a longer step is tried
-    linear = phi <= phi0 + alpha * sigma_increase * derphi0
-    sufficient = phi <= phi0 + alpha * sigma_decrease * derphi0
-    status = torch.where(searching & linear, _LS_INCREASE, status)
-    status = torch.where(searching & ~linear & ~sufficient, _LS_BACKTRACK, status)
-    took = searching & (linear | sufficient)
-    accepted = torch.where(took, alpha, accepted)
-    phi_accepted = torch.where(took, phi, phi_accepted)
+    accepted, phi_accepted, status = armijo_classify(
+        searching,
+        alpha,
+        phi,
+        phi0,
+        derphi0,
+        sigma_increase,
+        sigma_decrease,
+    )
 
     while True:
         active = (status == _LS_INCREASE) | (status == _LS_BACKTRACK)
         if not bool(active.any()):
             break
 
-        trial = torch.where(status == _LS_INCREASE, alpha / factor, accepted)
-        # see note above, decrease by factor^2
-        trial = torch.where(status == _LS_BACKTRACK, alpha * factor * factor, trial)
+        trial = armijo_trial(status, alpha, accepted, factor)
         phi_trial = func(trial)
         n_evals += 1
 
-        # longer step: keep it only if it beats the step we already have
-        increasing = status == _LS_INCREASE
-        better = increasing & (phi_trial < phi)
-        accepted = torch.where(better, trial, accepted)
-        phi_accepted = torch.where(better, phi_trial, phi_accepted)
-        status = torch.where(increasing, _LS_DONE, status)
-
-        backtracking = status == _LS_BACKTRACK
-        armijo = backtracking & (phi_trial <= phi0 + trial * sigma_decrease * derphi0)
-        accepted = torch.where(armijo, trial, accepted)
-        phi_accepted = torch.where(armijo, phi_trial, phi_accepted)
-        status = torch.where(armijo, _LS_DONE, status)
-
-        # under the floor: accept anything that still went downhill, else fail
-        floored = backtracking & ~armijo & (trial < minstep)
-        downhill = floored & (phi_trial < phi0)
-        accepted = torch.where(downhill, trial, accepted)
-        phi_accepted = torch.where(downhill, phi_trial, phi_accepted)
-        status = torch.where(downhill, _LS_DONE, status)
-        failed = floored & ~downhill
-        accepted = torch.where(failed, zeros, accepted)
-        phi_accepted = torch.where(failed, phi0, phi_accepted)
-        status = torch.where(failed, _LS_FAILED, status)
+        accepted, phi_accepted, status, failed = armijo_update(
+            status,
+            trial,
+            accepted,
+            phi_accepted,
+            phi,
+            phi_trial,
+            phi0,
+            derphi0,
+            sigma_decrease,
+            minstep,
+        )
         for p in failed.nonzero(as_tuple=False).flatten().tolist():
             step = float(trial[p])
             finite = (
