@@ -51,6 +51,39 @@ dev/bin/compare_benchmark tmol/tests/score -k cuda-full-lk_ball -- TREE HEAD
 
 Ancillary benchmark plots live near the tests as `plot_*.py` scripts.
 
+## Comparing Rosetta-family CPU workflows
+
+`dev/benchmarks/rosetta_comparison.py` measures application-level CPU latency
+and throughput for pose construction, full scoring,
+score-plus-coordinate-gradient evaluation, fixed-iteration Cartesian
+minimization, and fixed-sequence repacking. Run each engine in a separate
+process so native runtimes, allocators, and thread pools do not interfere:
+
+```bash
+OMP_NUM_THREADS=1 python dev/benchmarks/rosetta_comparison.py \
+  --engine tmol --workflow score --threads 1 --output tmol-score.json
+
+PYTHONPATH=/path/to/pyrosetta python \
+  dev/benchmarks/rosetta_comparison.py \
+  --engine pyrosetta --workflow score --threads 1 \
+  --output pyrosetta-score.json
+```
+
+The score workload clears Rosetta's complete pose-associated energy graph
+before every measurement so it cannot return cached work; TMol scoring is
+stateless. PyRosetta score-plus-gradient measurements use Rosetta's native C++
+`CartesianMultifunc`, not a Python atom loop. The TMol runner uses `beta2016`,
+and the Rosetta runners use `beta_nov16_cart`. These are analogous all-atom
+functions, but their numerical scores and protocol outcomes are not
+interchangeable.
+
+Use both single-pose latency and batched throughput cases. A fair CPU report
+also states thread count, affinity, warm-up count, structure size, and whether
+setup is included. The JSON output records each of these fields. PyRosetta's
+minimization and packing calls exercise the Rosetta C++ core through Python;
+when licensed Rosetta applications are installed, `--engine rosetta` can also
+measure end-to-end `score_jd2` process latency with `--rosetta-bin-dir`.
+
 ## Profiling
 
 `dev/bin/profile_benchmark` runs a short pytest benchmark under Nsight Systems
