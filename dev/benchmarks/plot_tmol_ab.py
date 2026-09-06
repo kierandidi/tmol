@@ -12,7 +12,15 @@ from typing import Iterable
 import matplotlib.pyplot as plt
 import pandas as pd
 
-CASE_KEYS = ["device", "workflow", "pdb", "batch", "threads"]
+CASE_KEYS = [
+    "device",
+    "workflow",
+    "pdb",
+    "batch",
+    "threads",
+    "reuse_topology",
+    "cuda_graph",
+]
 
 
 def _json_paths(inputs: Iterable[Path]) -> list[Path]:
@@ -41,6 +49,12 @@ def _load_variant(inputs: Iterable[Path], variant: str) -> pd.DataFrame:
                 "pdb": Path(payload["pdb"]).stem,
                 "batch": int(payload["batch"]),
                 "threads": int(payload["threads"]),
+                "reuse_topology": bool(
+                    payload.get("engine_metadata", {}).get("reuse_topology", False)
+                ),
+                "cuda_graph": bool(
+                    payload.get("engine_metadata", {}).get("cuda_graph", False)
+                ),
                 "milliseconds_per_pose": 1000
                 * float(payload["timing"]["median_seconds_per_pose"]),
             }
@@ -79,7 +93,11 @@ def _comparison(
     comparison["baseline_label"] = baseline_label
     comparison["candidate_label"] = candidate_label
     comparison["case"] = comparison.apply(
-        lambda row: f"{row.workflow}; {row.pdb}; B{row.batch}; T{row.threads}",
+        lambda row: (
+            f"{row.workflow}; {row.pdb}; B{row.batch}; T{row.threads}; "
+            + ("reuse" if row.reuse_topology else "one-shot")
+            + ("+graph" if row.cuda_graph else "")
+        ),
         axis=1,
     )
     return comparison.sort_values(CASE_KEYS)

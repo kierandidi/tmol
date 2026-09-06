@@ -192,6 +192,55 @@ def run_kin_min(
     )
 
 
+class _ReusableLBFGSFactory:
+    """Construct once, then reset LBFGS when parameters and options match."""
+
+    supports_segments = True
+
+    def __init__(self):
+        self.optimizer: LBFGS_Armijo | None = None
+        self.parameter: torch.Tensor | None = None
+        self.options: dict[str, object] | None = None
+        self.last_reused = False
+
+    @staticmethod
+    def _same_options(left: dict[str, object], right: dict[str, object]) -> bool:
+        if left.keys() != right.keys():
+            return False
+        for name, left_value in left.items():
+            right_value = right[name]
+            if isinstance(left_value, torch.Tensor) or isinstance(
+                right_value, torch.Tensor
+            ):
+                if left_value is not right_value:
+                    return False
+            elif left_value != right_value:
+                return False
+        return True
+
+    def __call__(self, params, **options) -> LBFGS_Armijo:
+        parameters = list(params)
+        if len(parameters) != 1:
+            return LBFGS_Armijo(parameters, **options)
+        parameter = parameters[0]
+        reusable = (
+            self.optimizer is not None
+            and parameter is self.parameter
+            and self.options is not None
+            and self._same_options(self.options, options)
+        )
+        self.last_reused = reusable
+        if reusable:
+            assert self.optimizer is not None
+            self.optimizer.reset()
+            return self.optimizer
+
+        self.optimizer = LBFGS_Armijo(parameters, **options)
+        self.parameter = parameter
+        self.options = dict(options)
+        return self.optimizer
+
+
 class CartesianMinimizer:
     """Reusable Cartesian minimizer for pose stacks with stable topology.
 
@@ -213,6 +262,9 @@ class CartesianMinimizer:
     def __init__(self, cuda_graph: bool = False):
         self.cuda_graph = cuda_graph
         self.network: CartesianSfxnNetwork | None = None
+        self.optimizer: LBFGS_Armijo | None = None
+        self.last_optimizer_reused = False
+        self._lbfgs_factory = _ReusableLBFGSFactory()
 
     def __call__(
         self,
@@ -235,12 +287,18 @@ class CartesianMinimizer:
                 coord_mask,
                 cuda_graph="forward_backward" if self.cuda_graph else False,
             )
-        return run_min(
+        selected_optimizer = (
+            self._lbfgs_factory if optimizer_cls is LBFGS_Armijo else optimizer_cls
+        )
+        result = run_min(
             self.network,
-            optimizer_cls=optimizer_cls,
+            optimizer_cls=selected_optimizer,
             optimizer_kwargs=optimizer_kwargs,
             verbose=verbose,
         )
+        self.optimizer = self._lbfgs_factory.optimizer
+        self.last_optimizer_reused = self._lbfgs_factory.last_reused
+        return result
 
 
 def run_cart_min(

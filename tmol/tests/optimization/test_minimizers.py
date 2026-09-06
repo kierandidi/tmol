@@ -77,15 +77,20 @@ def test_cartesian_minimizer_reuses_compatible_network(
     pose_stack = jagged_stack_of_465_res_ubqs
     sfxn = beta2016_score_function(torch_device)
     minimizer = CartesianMinimizer(cuda_graph=torch_device.type == "cuda")
-    kwargs = {"max_iter": 1, "gradtol": 0.0, "atol": 0.0, "rtol": 0.0}
+    kwargs = {"max_iter": 3, "gradtol": 0.0, "atol": 0.0, "rtol": 0.0}
 
     first = minimizer(pose_stack, sfxn, optimizer_kwargs=kwargs)
     network = minimizer.network
+    optimizer = minimizer.optimizer
     assert network is not None
-    second_input = attrs.evolve(pose_stack, coords=first.coords.clone())
-    minimizer(second_input, sfxn, optimizer_kwargs=kwargs)
+    assert optimizer is not None
+    second_input = attrs.evolve(pose_stack, coords=pose_stack.coords.clone())
+    second = minimizer(second_input, sfxn, optimizer_kwargs=kwargs)
 
     assert minimizer.network is network
+    assert minimizer.optimizer is optimizer
+    assert minimizer.last_optimizer_reused
+    torch.testing.assert_close(second.coords, first.coords)
 
 
 def test_run_kin_min_torch_lbfgs(

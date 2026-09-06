@@ -334,6 +334,35 @@ class LBFGS_Armijo(Optimizer):
             )
         self._init_segments(segment_ids)
 
+    def reset(self) -> None:
+        """Reset trajectory state while retaining shape-compatible scratch.
+
+        This is useful when repeatedly minimizing new coordinates with the
+        same parameter tensor and optimizer configuration. History contents
+        are ignored until overwritten, so large buffers do not need clearing.
+        """
+        param = self._params[0]
+        param.grad = None
+        state = self.state.get(param)
+        if not state:
+            return
+
+        state["func_evals"] = 0
+        state["n_iter"] = 0
+        state["history_start"] = 0
+        state["history_count"] = 0
+        for name in ("t", "prev_flat_grad", "prev_loss_vec"):
+            state.pop(name, None)
+        if state.get("x_ref") is not None:
+            state["x_ref"].copy_(param.data.view(-1))
+        for name in ("converged", "stalled", "needs_reset", "was_reset"):
+            if state.get(name) is not None:
+                state[name].zero_()
+        state["any_needs_reset"] = False
+        state["any_inactive"] = False
+        self._last_loss_vec = None
+        self._closure_fn = None
+
     def _init_segments(self, segment_ids):
         """Set up the mapping from parameter elements to independent blocks.
 
@@ -479,6 +508,9 @@ class LBFGS_Armijo(Optimizer):
         atol = group["atol"]
         gradtol = group["gradtol"]
         history_size = group["history_size"]
+        # At most one curvature pair is created after each iteration beyond
+        # the first. Short protocols should not allocate the default 128 slots.
+        history_size = min(history_size, max(1, max_iter - 1))
 
         # dtype-based default
         #   float32 : eps~3.45e-4
@@ -527,11 +559,12 @@ class LBFGS_Armijo(Optimizer):
                 state["grad_pad"] = torch.zeros(
                     hist_shape[1:], device=x.device, dtype=x.dtype
                 )
-            # zero-filled: unwritten slots and padding must not contribute
-            state["old_dirs_mat"] = torch.zeros(
+            # Only ``history_count`` written slots are consumed. Non-dense
+            # segmented writes explicitly zero their own padding.
+            state["old_dirs_mat"] = torch.empty(
                 hist_shape, device=x.device, dtype=x.dtype
             )
-            state["old_stps_mat"] = torch.zeros(
+            state["old_stps_mat"] = torch.empty(
                 hist_shape, device=x.device, dtype=x.dtype
             )
             state["history_start"] = 0  # Circular buffer start index
