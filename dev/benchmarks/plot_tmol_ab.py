@@ -116,6 +116,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--candidate", type=Path, nargs="+", required=True)
     parser.add_argument("--baseline-label", default="baseline")
     parser.add_argument("--candidate-label", default="candidate")
+    parser.add_argument("--device", choices=("cpu", "cuda"))
     parser.add_argument("--output-dir", type=Path, required=True)
     return parser.parse_args()
 
@@ -128,6 +129,10 @@ def main() -> None:
     comparison = _comparison(
         baseline, candidate, args.baseline_label, args.candidate_label
     )
+    if args.device is not None:
+        comparison = comparison[comparison.device == args.device]
+        if comparison.empty:
+            raise ValueError(f"no paired {args.device} records found")
     comparison.to_csv(args.output_dir / "optimization_summary.csv", index=False)
     _plot(comparison, args.candidate_label, args.output_dir)
 

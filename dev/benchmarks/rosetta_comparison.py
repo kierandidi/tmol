@@ -62,10 +62,10 @@ def _timing_summary(samples: list[float], batch: int) -> dict[str, float]:
     }
 
 
-def _git_revision() -> str | None:
+def _git_revision(root: Path = ROOT) -> str | None:
     try:
         return subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+            ["git", "rev-parse", "HEAD"], cwd=root, text=True
         ).strip()
     except (OSError, subprocess.CalledProcessError):
         return None
@@ -75,14 +75,24 @@ def _host_metadata() -> dict[str, Any]:
     affinity = (
         sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else []
     )
+    cpu_model = None
+    try:
+        for line in Path("/proc/cpuinfo").read_text().splitlines():
+            if line.startswith("model name"):
+                cpu_model = line.partition(":")[2].strip()
+                break
+    except OSError:
+        pass
     return {
         "hostname": platform.node(),
         "platform": platform.platform(),
         "python": platform.python_version(),
         "processor": platform.processor(),
+        "cpu_model": cpu_model,
         "affinity": affinity,
         "omp_num_threads": os.environ.get("OMP_NUM_THREADS"),
         "mkl_num_threads": os.environ.get("MKL_NUM_THREADS"),
+        "numexpr_num_threads": os.environ.get("NUMEXPR_NUM_THREADS"),
     }
 
 
@@ -96,6 +106,7 @@ class Workload:
 
 def _tmol_workload(args: argparse.Namespace) -> Workload:
     import torch
+    import tmol
 
     if args.device == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("--device cuda requested, but CUDA is unavailable")
@@ -191,8 +202,8 @@ def _tmol_workload(args: argparse.Namespace) -> Workload:
         run=run,
         synchronize=synchronize,
         metadata={
-            "tmol_version": __import__("tmol").__version__,
-            "tmol_revision": _git_revision(),
+            "tmol_version": tmol.__version__,
+            "tmol_revision": _git_revision(Path(tmol.__file__).resolve().parents[1]),
             "torch_version": torch.__version__,
             "torch_threads": torch.get_num_threads(),
             "device": str(device),
@@ -470,6 +481,7 @@ def main() -> None:
 
     payload = {
         "schema_version": 1,
+        "benchmark_revision": _git_revision(),
         "engine": args.engine,
         "workflow": args.workflow,
         "pdb": str(args.pdb.resolve()),
