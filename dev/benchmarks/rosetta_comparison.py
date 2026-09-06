@@ -184,6 +184,7 @@ def _tmol_workload(args: argparse.Namespace) -> Workload:
                     "gradtol": 0.0,
                     "atol": 0.0,
                     "rtol": 0.0,
+                    "fixed_iterations": True,
                 }
             }
             if reusable_minimizer is not None:
@@ -229,6 +230,7 @@ def _tmol_workload(args: argparse.Namespace) -> Workload:
             "score_function": "beta2016",
             "reuse_topology": args.reuse_topology,
             "cuda_graph": args.cuda_graph,
+            "fixed_iterations": args.workflow == "cart-min",
             "n_residues": int(pose.n_res_per_pose[0]),
             "n_atoms": int(pose.coords.shape[1]),
         },

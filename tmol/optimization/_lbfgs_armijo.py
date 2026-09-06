@@ -229,6 +229,8 @@ class LBFGS_Armijo(Optimizer):
         history_size (int): update history size (default: 128).
         segment_ids (Tensor): the segment (e.g. pose) each parameter element
             belongs to; each segment is minimized independently (default: one)
+        fixed_iterations (bool): run exactly ``max_iter`` iterations instead of
+            evaluating convergence criteria (default: False).
     """
 
     supports_segments = True
@@ -303,6 +305,7 @@ class LBFGS_Armijo(Optimizer):
         minstep=1e-12,
         verbose=False,
         segment_ids=None,
+        fixed_iterations=False,
     ):
         defaults = dict(
             lr=lr,
@@ -311,6 +314,7 @@ class LBFGS_Armijo(Optimizer):
             rtol=rtol,
             gradtol=gradtol,
             history_size=history_size,
+            fixed_iterations=fixed_iterations,
         )
         super(LBFGS_Armijo, self).__init__(params, defaults)
 
@@ -508,6 +512,7 @@ class LBFGS_Armijo(Optimizer):
         atol = group["atol"]
         gradtol = group["gradtol"]
         history_size = group["history_size"]
+        fixed_iterations = group["fixed_iterations"]
         # At most one curvature pair is created after each iteration beyond
         # the first. Short protocols should not allocate the default 128 slots.
         history_size = min(history_size, max(1, max_iter - 1))
@@ -586,6 +591,7 @@ class LBFGS_Armijo(Optimizer):
             atol=atol,
             gradtol=gradtol,
             history_size=history_size,
+            fixed_iterations=fixed_iterations,
             # torch / state
             state=state,
             param=param,
@@ -798,6 +804,12 @@ class LBFGS_Armijo(Optimizer):
         keeps moving while another pose finishes, making batch minimization
         depend on which other structures happen to share the stack.
         """
+        if ctx.fixed_iterations:
+            # Benchmarking and truncated inference protocols often require an
+            # exact iteration count. Skip convergence reductions and their
+            # device-to-host synchronization while preserving failure resets.
+            return False
+
         newly_converged = self._seg_amax(ctx.flat_grad.abs()) <= ctx.gradtol
         if ctx.prev_loss_vec is not None:
             dE = (ctx.loss_vec - ctx.prev_loss_vec).abs()

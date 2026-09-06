@@ -112,6 +112,12 @@ for pose_stack in same_topology_pose_stacks:
     result = minimize(pose_stack, score_function)
 ```
 
+The comparison runner requests `fixed_iterations=True` from TMol's
+`LBFGS_Armijo`. This both enforces the protocol's stated iteration count and
+skips convergence reductions and CPU/GPU synchronization that would otherwise
+make a fixed-iteration benchmark data-dependent. Normal application
+minimization retains convergence checking by default.
+
 Collect separate JSON records at each allocated core count, then generate
 latency, speedup, parallel-efficiency, and TMol-versus-competitor plots:
 

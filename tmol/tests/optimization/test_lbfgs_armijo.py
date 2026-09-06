@@ -136,6 +136,21 @@ def test_reset_reuses_scratch_and_restarts_trajectory():
     assert optimizer.state[x]["old_dirs_mat"].data_ptr() == history_ptr
 
 
+def test_fixed_iterations_skips_early_convergence():
+    x = torch.nn.Parameter(torch.zeros(2))
+    optimizer = LBFGS_Armijo([x], max_iter=4, fixed_iterations=True)
+
+    def closure():
+        optimizer.zero_grad()
+        loss = (x * x).sum()
+        loss.backward()
+        return loss
+
+    optimizer.step(closure)
+
+    assert optimizer.state[x]["n_iter"] == 4
+
+
 @pytest.mark.xfail(reason="sparse tensor _copy failure in torch 1.6")
 def test_lbfgs_armijo_sparse():
     indices = torch.LongTensor([[0, 0, 1], [0, 1, 1]])
