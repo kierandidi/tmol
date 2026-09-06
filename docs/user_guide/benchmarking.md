@@ -84,6 +84,24 @@ minimization and packing calls exercise the Rosetta C++ core through Python;
 when licensed Rosetta applications are installed, `--engine rosetta` can also
 measure end-to-end `score_jd2` process latency with `--rosetta-bin-dir`.
 
+Collect separate JSON records at each allocated core count, then generate
+latency, speedup, parallel-efficiency, and TMol-versus-competitor plots:
+
+```bash
+python dev/benchmarks/plot_rosetta_comparison.py results/scaling \
+  --output-dir results/plots
+```
+
+The plotter emits PNG, SVG, and PDF figures plus the underlying summary CSVs.
+Keep single-pose scaling separate from independent-pose batch throughput:
+PyRosetta and many Rosetta applications do not parallelize one ordinary
+`ScoreFunction` evaluation merely because more threads were allocated.
+
+For TMol CUDA runs, pass `--device cuda`. The runner synchronizes the selected
+device immediately around every timed iteration so the reported time includes
+completed kernel work rather than asynchronous launch latency. Rosetta and
+PyRosetta runs accept CPU only.
+
 ## Profiling
 
 `dev/bin/profile_benchmark` runs a short pytest benchmark under Nsight Systems

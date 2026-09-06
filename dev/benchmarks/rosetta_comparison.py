@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare common TMol and Rosetta-family CPU workflows.
+"""Compare common TMol and Rosetta-family workflows.
 
 The benchmark deliberately runs one engine per process.  PyRosetta and TMol
 both load large native runtimes, and mixing them in one interpreter changes
@@ -91,11 +91,14 @@ class Workload:
     setup_seconds: float
     run: Callable[[int], Any]
     metadata: dict[str, Any]
+    synchronize: Callable[[], None]
 
 
 def _tmol_workload(args: argparse.Namespace) -> Workload:
     import torch
 
+    if args.device == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError("--device cuda requested, but CUDA is unavailable")
     torch.set_num_threads(args.threads)
     torch.set_num_interop_threads(1)
 
@@ -109,7 +112,12 @@ def _tmol_workload(args: argparse.Namespace) -> Workload:
     from tmol.score import beta2016_score_function
 
     pdb_text = args.pdb.read_text()
-    device = torch.device("cpu")
+    device = torch.device(args.device)
+    synchronize = (
+        (lambda: torch.cuda.synchronize(device))
+        if device.type == "cuda"
+        else (lambda: None)
+    )
 
     def build_pose():
         single = pose_stack_from_pdb(pdb_text, device)
@@ -181,11 +189,16 @@ def _tmol_workload(args: argparse.Namespace) -> Workload:
     return Workload(
         setup_seconds=setup_seconds,
         run=run,
+        synchronize=synchronize,
         metadata={
             "tmol_version": __import__("tmol").__version__,
             "tmol_revision": _git_revision(),
             "torch_version": torch.__version__,
             "torch_threads": torch.get_num_threads(),
+            "device": str(device),
+            "device_name": (
+                torch.cuda.get_device_name(device) if device.type == "cuda" else None
+            ),
             "score_function": "beta2016",
             "n_residues": int(pose.n_res_per_pose[0]),
             "n_atoms": int(pose.coords.shape[1]),
@@ -194,6 +207,8 @@ def _tmol_workload(args: argparse.Namespace) -> Workload:
 
 
 def _pyrosetta_workload(args: argparse.Namespace) -> Workload:  # noqa: C901
+    if args.device != "cpu":
+        raise ValueError("PyRosetta supports --device cpu only")
     if args.pyrosetta_root is not None:
         sys.path.insert(0, str(args.pyrosetta_root))
 
@@ -318,6 +333,7 @@ def _pyrosetta_workload(args: argparse.Namespace) -> Workload:  # noqa: C901
     return Workload(
         setup_seconds=setup_seconds,
         run=run,
+        synchronize=lambda: None,
         metadata={
             "pyrosetta_version": rosetta.utility.Version.version(),
             "score_function": "beta_nov16_cart",
@@ -354,6 +370,8 @@ def _find_rosetta_score_binary(bin_dir: Path | None) -> Path:
 
 
 def _rosetta_workload(args: argparse.Namespace) -> Workload:
+    if args.device != "cpu":
+        raise ValueError("standalone Rosetta supports --device cpu only")
     if args.workflow != "score":
         raise ValueError(
             "The standalone runner currently supports score only; fixed-iteration "
@@ -383,6 +401,7 @@ def _rosetta_workload(args: argparse.Namespace) -> Workload:
     return Workload(
         setup_seconds=0.0,
         run=run,
+        synchronize=lambda: None,
         metadata={
             "score_function": "beta_nov16_cart",
             "binary": str(score_binary),
@@ -400,6 +419,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--pdb", type=Path, default=DEFAULT_PDB)
     parser.add_argument("--batch", type=int, default=1)
     parser.add_argument("--threads", type=int, default=1)
+    parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     parser.add_argument("--warmup", type=int, default=3)
     parser.add_argument("--repeats", type=int, default=20)
     parser.add_argument("--protocol-iterations", type=int, default=10)
@@ -423,6 +443,7 @@ def main() -> None:
     os.environ["OMP_NUM_THREADS"] = str(args.threads)
     os.environ["MKL_NUM_THREADS"] = str(args.threads)
     os.environ["OPENBLAS_NUM_THREADS"] = str(args.threads)
+    os.environ["NUMEXPR_NUM_THREADS"] = str(args.threads)
 
     process_start = time.perf_counter()
     builders = {
@@ -435,11 +456,14 @@ def main() -> None:
 
     for iteration in range(args.warmup):
         workload.run(iteration)
+    workload.synchronize()
 
     samples = []
     for iteration in range(args.repeats):
+        workload.synchronize()
         start = time.perf_counter()
         result = workload.run(iteration + args.warmup)
+        workload.synchronize()
         samples.append(time.perf_counter() - start)
         if result is None:
             raise RuntimeError("workload returned no result")
@@ -451,6 +475,7 @@ def main() -> None:
         "pdb": str(args.pdb.resolve()),
         "batch": args.batch,
         "threads": args.threads,
+        "device": args.device,
         "warmup": args.warmup,
         "repeats": args.repeats,
         "protocol_iterations": args.protocol_iterations,
