@@ -26,7 +26,7 @@ Tensor armijo_start(Tensor searching, Tensor alpha0) {
   return alpha;
 }
 
-std::tuple<Tensor, Tensor, Tensor> armijo_classify(
+std::tuple<Tensor, Tensor, Tensor, Tensor> armijo_classify(
     Tensor searching,
     Tensor alpha,
     Tensor phi,
@@ -34,7 +34,7 @@ std::tuple<Tensor, Tensor, Tensor> armijo_classify(
     Tensor derphi0,
     double sigma_increase,
     double sigma_decrease) {
-  Tensor accepted, phi_accepted, status;
+  Tensor accepted, phi_accepted, status, active;
   TMOL_DISPATCH_FLOATING_DEVICE(
       alpha.options(), "armijo_classify", ([&] {
         using Real = scalar_t;
@@ -53,8 +53,9 @@ std::tuple<Tensor, Tensor, Tensor> armijo_classify(
         accepted = std::get<0>(result).tensor;
         phi_accepted = std::get<1>(result).tensor;
         status = std::get<2>(result).tensor;
+        active = std::get<3>(result).tensor;
       }));
-  return {accepted, phi_accepted, status};
+  return {accepted, phi_accepted, status, active};
 }
 
 Tensor armijo_trial(
@@ -77,7 +78,7 @@ Tensor armijo_trial(
   return trial;
 }
 
-std::tuple<Tensor, Tensor, Tensor, Tensor> armijo_update(
+std::tuple<Tensor, Tensor, Tensor, Tensor, Tensor> armijo_update(
     Tensor status,
     Tensor trial,
     Tensor accepted,
@@ -88,7 +89,7 @@ std::tuple<Tensor, Tensor, Tensor, Tensor> armijo_update(
     Tensor derphi0,
     double sigma_decrease,
     double minstep) {
-  Tensor next_accepted, next_phi_accepted, next_status, failed;
+  Tensor next_accepted, next_phi_accepted, next_status, failed, active;
   TMOL_DISPATCH_FLOATING_DEVICE(
       trial.options(), "armijo_update", ([&] {
         using Real = scalar_t;
@@ -111,8 +112,37 @@ std::tuple<Tensor, Tensor, Tensor, Tensor> armijo_update(
         next_phi_accepted = std::get<1>(result).tensor;
         next_status = std::get<2>(result).tensor;
         failed = std::get<3>(result).tensor;
+        active = std::get<4>(result).tensor;
       }));
-  return {next_accepted, next_phi_accepted, next_status, failed};
+  return {next_accepted, next_phi_accepted, next_status, failed, active};
+}
+
+std::tuple<Tensor, Tensor> armijo_finalize(
+    Tensor status,
+    Tensor derphi0,
+    Tensor accepted,
+    Tensor start,
+    Tensor searching,
+    double minstep) {
+  Tensor step, failed;
+  TMOL_DISPATCH_FLOATING_DEVICE(
+      accepted.options(), "armijo_finalize", ([&] {
+        using Real = scalar_t;
+        constexpr tmol::Device Dev = device_t;
+        auto result =
+            ArmijoCompiledDispatch<score::common::DeviceOperations, Dev, Real>::
+                finalize(
+                    mgr,
+                    TCAST(status),
+                    TCAST(derphi0),
+                    TCAST(accepted),
+                    TCAST(start),
+                    TCAST(searching),
+                    Real(minstep));
+        step = std::get<0>(result).tensor;
+        failed = std::get<1>(result).tensor;
+      }));
+  return {step, failed};
 }
 
 TORCH_LIBRARY(tmol_optimization, m) {
@@ -120,6 +150,7 @@ TORCH_LIBRARY(tmol_optimization, m) {
   m.def("armijo_classify", &armijo_classify);
   m.def("armijo_trial", &armijo_trial);
   m.def("armijo_update", &armijo_update);
+  m.def("armijo_finalize", &armijo_finalize);
 }
 
 }  // namespace optimization

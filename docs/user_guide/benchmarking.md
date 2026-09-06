@@ -170,16 +170,23 @@ where capture cost cannot be amortized.
 
 The Cartesian minimizer illustrates why both techniques matter. Its rendered
 score-and-gradient evaluation can use graph replay, but its Armijo line search
-has data-dependent control flow and stays eager. TMol implements the four
-groups of per-segment Armijo state transitions as compiled CPU/CUDA kernels;
-the score call remains between those kernels and can still be graph-captured.
+has data-dependent control flow and stays eager. TMol implements the
+per-segment Armijo state transitions and final step selection as compiled
+CPU/CUDA kernels; the score call remains between those kernels and can still be
+graph-captured. A one-segment predicate is copied directly instead of first
+launching a reduction, and the uncommon failure diagnostic only constructs its
+index list when a failure is present.
+
 On an H200 reference run with one 43-residue pose and five fixed iterations,
-this fusion reduced one eager minimization from 1,798 to 1,422 physical CUDA
-kernels and from 8,101 to 7,255 CPU operator events. The synchronized batch-1
-latency improved by 16.7% in eager mode and 8.7% with graph replay. At batch
-128 the corresponding gains were 1.4% and 1.8%, because device computation
-already dominated. Treat these figures as a launch-structure example, not as
-a portable performance guarantee.
+these changes reduced one eager minimization from 1,798 to 1,335 physical CUDA
+kernels and from 8,101 to 6,955 CPU operator events. The first transition
+fusion improved synchronized batch-1 latency by 16.7% in eager mode and 8.7%
+with graph replay. A second, separately interleaved comparison of finalization
+fusion and the scalar-predicate fast path improved the already-fused baseline
+by another 6.5% and 4.5%, respectively. At batch 128 the second comparison
+improved eager and graph execution by 1.9% and 1.6%, because device computation
+already dominated. Treat these figures as a launch-structure example, not as a
+portable performance guarantee.
 
 Compare event counts from two or more Chrome traces with:
 

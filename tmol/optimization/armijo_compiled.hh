@@ -19,7 +19,11 @@ struct ArmijoCompiledDispatch {
       TView<bool, 1, D> searching,
       TView<Real, 1, D> alpha0);
 
-  static std::tuple<TPack<Real, 1, D>, TPack<Real, 1, D>, TPack<int64_t, 1, D>>
+  static std::tuple<
+      TPack<Real, 1, D>,
+      TPack<Real, 1, D>,
+      TPack<int64_t, 1, D>,
+      TPack<bool, 1, D>>
   classify(
       ContextManager& mgr,
       TView<bool, 1, D> searching,
@@ -41,6 +45,7 @@ struct ArmijoCompiledDispatch {
       TPack<Real, 1, D>,
       TPack<Real, 1, D>,
       TPack<int64_t, 1, D>,
+      TPack<bool, 1, D>,
       TPack<bool, 1, D>>
   update(
       ContextManager& mgr,
@@ -53,6 +58,15 @@ struct ArmijoCompiledDispatch {
       TView<Real, 1, D> phi0,
       TView<Real, 1, D> derphi0,
       Real sigma_decrease,
+      Real minstep);
+
+  static std::tuple<TPack<Real, 1, D>, TPack<bool, 1, D>> finalize(
+      ContextManager& mgr,
+      TView<int64_t, 1, D> status,
+      TView<Real, 1, D> derphi0,
+      TView<Real, 1, D> accepted,
+      TView<Real, 1, D> start,
+      TView<bool, 1, D> searching,
       Real minstep);
 };
 

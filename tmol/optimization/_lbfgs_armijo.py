@@ -6,6 +6,7 @@ from torch.optim import Optimizer
 
 from tmol.optimization._armijo_compiled import (
     armijo_classify,
+    armijo_finalize,
     armijo_start,
     armijo_trial,
     armijo_update,
@@ -93,6 +94,11 @@ _LS_BACKTRACK = 2
 _LS_FAILED = 3
 
 
+def _any_true(mask):
+    """Synchronize a predicate without launching a reduction for one segment."""
+    return bool(mask) if mask.numel() == 1 else bool(mask.any())
+
+
 def armijo_linesearch_segmented(
     func,
     derphi0,
@@ -153,7 +159,7 @@ def armijo_linesearch_segmented(
 
     # sigma_increase > sigma_decrease, so a linear-looking step also has
     # sufficient decrease; it is the one case where a longer step is tried
-    accepted, phi_accepted, status = armijo_classify(
+    accepted, phi_accepted, status, active = armijo_classify(
         searching,
         alpha,
         phi,
@@ -164,15 +170,14 @@ def armijo_linesearch_segmented(
     )
 
     while True:
-        active = (status == _LS_INCREASE) | (status == _LS_BACKTRACK)
-        if not bool(active.any()):
+        if not _any_true(active):
             break
 
         trial = armijo_trial(status, alpha, accepted, factor)
         phi_trial = func(trial)
         n_evals += 1
 
-        accepted, phi_accepted, status, failed = armijo_update(
+        accepted, phi_accepted, status, failed, active = armijo_update(
             status,
             trial,
             accepted,
@@ -184,21 +189,24 @@ def armijo_linesearch_segmented(
             sigma_decrease,
             minstep,
         )
-        for p in failed.nonzero(as_tuple=False).flatten().tolist():
-            step = float(trial[p])
-            finite = (
-                (float(phi_trial[p]) - float(phi0[p])) / step if step else float("inf")
-            )
-            print(
-                "Inaccurate G! Segment=",
-                p,
-                " Step=",
-                step,
-                " Deriv=",
-                float(derphi0[p]),
-                " Finite=",
-                finite,
-            )
+        if _any_true(failed):
+            for p in failed.nonzero(as_tuple=False).flatten().tolist():
+                step = float(trial[p])
+                finite = (
+                    (float(phi_trial[p]) - float(phi0[p])) / step
+                    if step
+                    else float("inf")
+                )
+                print(
+                    "Inaccurate G! Segment=",
+                    p,
+                    " Step=",
+                    step,
+                    " Deriv=",
+                    float(derphi0[p]),
+                    " Finite=",
+                    finite,
+                )
 
         alpha = trial
         phi = phi_trial
@@ -636,7 +644,7 @@ class LBFGS_Armijo(Optimizer):
             # a segment with no curvature of its own contributes no history
             keep = self._seg_sum(y * s) > 1e-6
 
-            if bool(keep.any()):
+            if _any_true(keep):
                 # updating memory - write directly into circular buffer
                 if ctx.history_count < ctx.history_size:
                     # Still filling up the buffer
@@ -730,7 +738,7 @@ class LBFGS_Armijo(Optimizer):
         if correct:
             for check in (1, 2):
                 bad = (gtd_seg > -1e-5) & ~self._inactive(ctx)
-                if not bool(bad.any()):
+                if not _any_true(bad):
                     break
                 bad_elem = self._per_element(bad)
                 if check == 1:
@@ -773,12 +781,15 @@ class LBFGS_Armijo(Optimizer):
 
         # a failed search gets one steepest-descent restart, applied on the next
         # iteration so the other segments are not held up; then it is retired
-        failed = status == _LS_FAILED
-        # restart step length, as in the unsegmented rescue: 1/sqrt(|g.d|)
-        retry_t = torch.clamp((-ctx.gtd_seg).clamp(min=self._minstep).rsqrt(), max=1.0)
-        ctx.t = torch.where(failed, retry_t, accepted)
-        ctx.t = torch.where(searching, ctx.t, start_t)
-        any_failed = bool(failed.any())
+        ctx.t, failed = armijo_finalize(
+            status,
+            ctx.gtd_seg,
+            accepted,
+            start_t,
+            searching,
+            self._minstep,
+        )
+        any_failed = _any_true(failed)
         if any_failed:
             ctx.stalled |= failed & ctx.was_reset
             ctx.needs_reset |= failed & ~ctx.was_reset

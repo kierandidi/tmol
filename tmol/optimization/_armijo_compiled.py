@@ -24,3 +24,4 @@ armijo_start = _ops.armijo_start
 armijo_classify = _ops.armijo_classify
 armijo_trial = _ops.armijo_trial
 armijo_update = _ops.armijo_update
+armijo_finalize = _ops.armijo_finalize

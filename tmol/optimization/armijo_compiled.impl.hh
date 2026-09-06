@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+
 #include <tmol/optimization/armijo_compiled.hh>
 #include <tmol/score/common/diamond_macros.hh>
 #include <tmol/score/common/launch_box_macros.hh>
@@ -39,7 +41,11 @@ template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
     typename Real>
-std::tuple<TPack<Real, 1, D>, TPack<Real, 1, D>, TPack<int64_t, 1, D>>
+std::tuple<
+    TPack<Real, 1, D>,
+    TPack<Real, 1, D>,
+    TPack<int64_t, 1, D>,
+    TPack<bool, 1, D>>
 ArmijoCompiledDispatch<DeviceDispatch, D, Real>::classify(
     ContextManager& mgr,
     TView<bool, 1, D> searching,
@@ -53,9 +59,11 @@ ArmijoCompiledDispatch<DeviceDispatch, D, Real>::classify(
   auto accepted_t = TPack<Real, 1, D>::empty({n_segments});
   auto phi_accepted_t = TPack<Real, 1, D>::empty({n_segments});
   auto status_t = TPack<int64_t, 1, D>::empty({n_segments});
+  auto active_t = TPack<bool, 1, D>::empty({n_segments});
   auto accepted = accepted_t.view;
   auto phi_accepted = phi_accepted_t.view;
   auto status = status_t.view;
+  auto active = active_t.view;
 
   LAUNCH_BOX_128;
   DeviceDispatch<D>::template forall<launch_t>(
@@ -68,12 +76,14 @@ ArmijoCompiledDispatch<DeviceDispatch, D, Real>::classify(
 
         accepted[i] = took ? alpha[i] : Real(0);
         phi_accepted[i] = took ? phi[i] : phi0[i];
-        status[i] = !searching[i] ? LS_DONE
-                    : linear      ? LS_INCREASE
-                    : !sufficient ? LS_BACKTRACK
-                                  : LS_DONE;
+        int64_t const status_i = !searching[i] ? LS_DONE
+                                 : linear      ? LS_INCREASE
+                                 : !sufficient ? LS_BACKTRACK
+                                               : LS_DONE;
+        status[i] = status_i;
+        active[i] = status_i == LS_INCREASE || status_i == LS_BACKTRACK;
       });
-  return {accepted_t, phi_accepted_t, status_t};
+  return {accepted_t, phi_accepted_t, status_t, active_t};
 }
 
 template <
@@ -108,6 +118,7 @@ std::tuple<
     TPack<Real, 1, D>,
     TPack<Real, 1, D>,
     TPack<int64_t, 1, D>,
+    TPack<bool, 1, D>,
     TPack<bool, 1, D>>
 ArmijoCompiledDispatch<DeviceDispatch, D, Real>::update(
     ContextManager& mgr,
@@ -126,10 +137,12 @@ ArmijoCompiledDispatch<DeviceDispatch, D, Real>::update(
   auto next_phi_accepted_t = TPack<Real, 1, D>::empty({n_segments});
   auto next_status_t = TPack<int64_t, 1, D>::empty({n_segments});
   auto failed_t = TPack<bool, 1, D>::empty({n_segments});
+  auto active_t = TPack<bool, 1, D>::empty({n_segments});
   auto next_accepted = next_accepted_t.view;
   auto next_phi_accepted = next_phi_accepted_t.view;
   auto next_status = next_status_t.view;
   auto failed = failed_t.view;
+  auto active = active_t.view;
 
   LAUNCH_BOX_128;
   DeviceDispatch<D>::template forall<launch_t>(
@@ -170,8 +183,46 @@ ArmijoCompiledDispatch<DeviceDispatch, D, Real>::update(
         next_phi_accepted[i] = phi_accepted_i;
         next_status[i] = status_i;
         failed[i] = failed_i;
+        active[i] = status_i == LS_INCREASE || status_i == LS_BACKTRACK;
       });
-  return {next_accepted_t, next_phi_accepted_t, next_status_t, failed_t};
+  return {
+      next_accepted_t, next_phi_accepted_t, next_status_t, failed_t, active_t};
+}
+
+template <
+    template <tmol::Device> class DeviceDispatch,
+    tmol::Device D,
+    typename Real>
+std::tuple<TPack<Real, 1, D>, TPack<bool, 1, D>>
+ArmijoCompiledDispatch<DeviceDispatch, D, Real>::finalize(
+    ContextManager& mgr,
+    TView<int64_t, 1, D> status,
+    TView<Real, 1, D> derphi0,
+    TView<Real, 1, D> accepted,
+    TView<Real, 1, D> start,
+    TView<bool, 1, D> searching,
+    Real minstep) {
+  int const n_segments = accepted.size(0);
+  auto step_t = TPack<Real, 1, D>::empty({n_segments});
+  auto failed_t = TPack<bool, 1, D>::empty({n_segments});
+  auto step = step_t.view;
+  auto failed = failed_t.view;
+
+  LAUNCH_BOX_128;
+  DeviceDispatch<D>::template forall<launch_t>(
+      mgr, n_segments, [=] TMOL_DEVICE_FUNC(int i) {
+        bool const failed_i = status[i] == LS_FAILED;
+        Real selected = accepted[i];
+        if (failed_i) {
+          Real magnitude = -derphi0[i];
+          magnitude = magnitude < minstep ? minstep : magnitude;
+          Real retry = Real(1) / sqrt(magnitude);
+          selected = retry < Real(1) ? retry : Real(1);
+        }
+        step[i] = searching[i] ? selected : start[i];
+        failed[i] = failed_i;
+      });
+  return {step_t, failed_t};
 }
 
 }  // namespace optimization

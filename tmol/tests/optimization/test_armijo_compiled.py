@@ -3,6 +3,7 @@ import torch
 
 from tmol.optimization._armijo_compiled import (
     armijo_classify,
+    armijo_finalize,
     armijo_start,
     armijo_trial,
     armijo_update,
@@ -39,7 +40,7 @@ def test_armijo_start_and_classify_match_tensor_reference(torch_device, dtype):
     expected_phi_accepted = torch.where(took, phi, phi0)
 
     alpha = armijo_start(searching, alpha0)
-    accepted, phi_accepted, status = armijo_classify(
+    accepted, phi_accepted, status, active = armijo_classify(
         searching,
         alpha,
         phi,
@@ -53,6 +54,10 @@ def test_armijo_start_and_classify_match_tensor_reference(torch_device, dtype):
     torch.testing.assert_close(accepted, expected_accepted, rtol=0, atol=0)
     torch.testing.assert_close(phi_accepted, expected_phi_accepted, rtol=0, atol=0)
     torch.testing.assert_close(status, expected_status, rtol=0, atol=0)
+    expected_active = (expected_status == _LS_INCREASE) | (
+        expected_status == _LS_BACKTRACK
+    )
+    torch.testing.assert_close(active, expected_active, rtol=0, atol=0)
 
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
@@ -122,7 +127,7 @@ def test_armijo_trial_and_update_match_tensor_reference(torch_device, dtype):
     expected_status = torch.where(expected_failed, _LS_FAILED, expected_status)
 
     trial = armijo_trial(status, alpha, accepted, factor)
-    next_accepted, next_phi_accepted, next_status, failed = armijo_update(
+    next_accepted, next_phi_accepted, next_status, failed, active = armijo_update(
         status,
         trial,
         accepted,
@@ -139,4 +144,32 @@ def test_armijo_trial_and_update_match_tensor_reference(torch_device, dtype):
     torch.testing.assert_close(next_accepted, expected_accepted, rtol=0, atol=0)
     torch.testing.assert_close(next_phi_accepted, expected_phi_accepted, rtol=0, atol=0)
     torch.testing.assert_close(next_status, expected_status, rtol=0, atol=0)
+    torch.testing.assert_close(failed, expected_failed, rtol=0, atol=0)
+    expected_active = (expected_status == _LS_INCREASE) | (
+        expected_status == _LS_BACKTRACK
+    )
+    torch.testing.assert_close(active, expected_active, rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_armijo_finalize_matches_tensor_reference(torch_device, dtype):
+    status = torch.tensor(
+        [_LS_DONE, _LS_FAILED, _LS_FAILED, _LS_DONE],
+        dtype=torch.int64,
+        device=torch_device,
+    )
+    derphi0 = torch.tensor([-4.0, -4.0, -0.25, -1.0], dtype=dtype, device=torch_device)
+    accepted = torch.tensor([0.5, 0.0, 0.0, 0.75], dtype=dtype, device=torch_device)
+    start = torch.tensor([1.0, 0.8, 0.6, 0.4], dtype=dtype, device=torch_device)
+    searching = torch.tensor([True, True, True, False], device=torch_device)
+    minstep = 1e-12
+
+    expected_failed = status == _LS_FAILED
+    retry = torch.clamp((-derphi0).clamp(min=minstep).rsqrt(), max=1.0)
+    expected_step = torch.where(expected_failed, retry, accepted)
+    expected_step = torch.where(searching, expected_step, start)
+
+    step, failed = armijo_finalize(status, derphi0, accepted, start, searching, minstep)
+
+    torch.testing.assert_close(step, expected_step)
     torch.testing.assert_close(failed, expected_failed, rtol=0, atol=0)
