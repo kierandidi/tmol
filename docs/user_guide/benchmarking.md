@@ -150,6 +150,36 @@ after normal timing so profiler instrumentation does not contaminate the
 reported latency. Use `--profile-repeats` sparingly because shape and memory
 recording are intentionally detailed.
 
+### CUDA graphs and eager latency
+
+A CUDA graph does not make individual score kernels intrinsically faster. It
+records the fixed launch dependency graph once and replays it from CUDA,
+amortizing Python, PyTorch dispatcher, autograd-engine, and CUDA launch setup.
+It is therefore most valuable for a small, repeatedly executed workload. At a
+large batch, kernel execution dominates total time and eager execution is much
+closer to graph replay.
+
+The eager alternatives are complementary rather than equivalent: reuse
+topology-dependent renderings and optimizer scratch, skip convergence checks
+for explicitly fixed-iteration protocols, and fuse sequences of small
+optimizer or score operations where profiling demonstrates launch-bound work.
+Improving arithmetic inside one kernel cannot remove the host overhead of the
+other launches. Prefer graph replay when inputs have stable shapes and storage;
+prefer eager mode for dynamic control flow, changing shapes, or one-off calls
+where capture cost cannot be amortized.
+
+Compare event counts from two or more Chrome traces with:
+
+```bash
+python dev/benchmarks/plot_profile_launches.py \
+  --profile eager=profile/eager \
+  --profile graph=profile/graph \
+  --output-dir profile/launch-plots
+```
+
+The event-count figure explains launch structure; it is not a latency result.
+Use the runner's synchronized timing JSON for latency and throughput claims.
+
 When measuring throughput scaling for independent structures, run one
 single-threaded worker per allocated core for both engines. Aggregate those
 worker records separately from within-call scaling with:
