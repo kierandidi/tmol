@@ -131,17 +131,34 @@ def read_traces(run_dir: Path) -> list[dict[str, str | int | float]]:
             and not row.get("Range", "").endswith("/measure")
         ]
         top_range = max(nested, key=lambda row: int(row["Total Time (ns)"]), default={})
+        profiled_wall_ms = result["median_ms"]
+        gpu_kernel_ms = (
+            sum(int(row["Total Time (ns)"]) for row in kernels) / 1e6
+        )
+        launch_api_ms = int(launches.get("Total Time (ns)", 0)) / 1e6
         rows.append(
             {
                 "case": case,
-                "profiled_wall_ms": result["median_ms"],
-                "nvtx_iteration_ms": int(iteration.get("Total Time (ns)", 0)) / 1e6,
-                "gpu_kernel_ms": sum(int(row["Total Time (ns)"]) for row in kernels)
-                / 1e6,
+                "profiled_wall_ms": profiled_wall_ms,
+                # CUDA launches are asynchronous. The range ends before the
+                # outer synchronization, so this is host enqueue time rather
+                # than completed-work latency.
+                "nvtx_enqueue_ms": int(iteration.get("Total Time (ns)", 0)) / 1e6,
+                "gpu_kernel_ms": gpu_kernel_ms,
+                "gpu_kernel_wall_fraction": (
+                    gpu_kernel_ms / profiled_wall_ms if profiled_wall_ms else 0.0
+                ),
                 "kernel_launches": int(launches.get("Num Calls", 0)),
-                "launch_api_ms": int(launches.get("Total Time (ns)", 0)) / 1e6,
-                "top_nvtx": top_range.get("Range", "").removeprefix(":"),
-                "top_nvtx_ms": int(top_range.get("Total Time (ns)", 0)) / 1e6,
+                "launch_api_ms": launch_api_ms,
+                "launch_api_wall_fraction": (
+                    launch_api_ms / profiled_wall_ms if profiled_wall_ms else 0.0
+                ),
+                # This is an inclusive aggregate across every occurrence of a
+                # nested range. It can exceed wall time when ranges overlap.
+                "top_inclusive_nvtx": top_range.get("Range", "").removeprefix(":"),
+                "top_inclusive_nvtx_ms": (
+                    int(top_range.get("Total Time (ns)", 0)) / 1e6
+                ),
                 "top_kernel": _short_kernel(top.get("Name", "")),
                 "top_kernel_ms": int(top.get("Total Time (ns)", 0)) / 1e6,
             }

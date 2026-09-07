@@ -118,10 +118,13 @@ python dev/profiling/analyze.py artifacts/nsys
 
 The analyzer first verifies every size and SHA-256 checksum in `manifest.json`,
 then writes `analysis/timings.md`, `analysis/timings.svg`, and
-`analysis/trace_summary.csv`. The trace summary includes the profiled iteration
-wall time, NVTX enqueue-range time, total GPU-kernel time, kernel-launch count
-and API time, largest cumulative NVTX range, and dominant kernel. Compare
-regular runs from two revisions with:
+`analysis/trace_summary.csv`. The trace summary includes profiled wall time,
+NVTX host-enqueue time, total GPU-kernel time, kernel-launch count and API time,
+kernel/launch fractions of profiled wall time, the largest inclusive cumulative
+NVTX range, and the dominant kernel. CUDA launches are asynchronous, so the
+NVTX enqueue interval is not completed-work latency. Inclusive nested NVTX
+totals may exceed wall time when ranges overlap; use them for ownership, not
+utilization. Compare regular runs from two revisions with:
 
 ```bash
 python dev/profiling/analyze.py artifacts/current \
