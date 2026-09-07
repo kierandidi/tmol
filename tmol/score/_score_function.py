@@ -1461,7 +1461,15 @@ class RotamerScoringModule:
             len(self.term_modules), weights.device
         )
 
-    def __call__(self, coords: torch.Tensor) -> torch.Tensor:
+    def _weighted_entries_by_layout(
+        self, coords: torch.Tensor
+    ) -> tuple[list[torch.Tensor], list[torch.Tensor], int | None, int | None]:
+        """Evaluate terms and combine entries that have identical layouts.
+
+        Keeping this representation outside a PyTorch sparse COO tensor is
+        important to the packer: COO construction promotes coordinates to
+        int64, and coalescing then needs another potentially very large sort.
+        """
         if not torch.is_grad_enabled() and coords.requires_grad:
             coords = coords.detach()
         # Accumulate weighted values and their indices across all terms at the
@@ -1496,9 +1504,12 @@ class RotamerScoringModule:
                 )
                 for term in self.term_modules
             ]
-            term_results = [future.result() for future in futures]
+            term_results = (future.result() for future in futures)
         else:
-            term_results = [term.forward(coords) for term in self.term_modules]
+            # Do not retain every term's complete score/index tensors. CUDA
+            # packing layouts can be many GiB apiece, so consume each result
+            # before evaluating the next term.
+            term_results = (term.forward(coords) for term in self.term_modules)
 
         for term, (scores, indices) in zip(self.term_modules, term_results):
             # [n_subterms, nnz], [3, nnz]
@@ -1536,6 +1547,31 @@ class RotamerScoringModule:
             if n_poses is None:
                 n_poses = term.n_poses
                 n_rots = term.n_rots
+
+        return all_indices, all_values, n_poses, n_rots
+
+    def forward_sparse_entries(
+        self, coords: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return weighted, uncoalesced ``(indices, values)`` for packing.
+
+        Duplicate coordinates may remain when two score terms use different
+        layouts. Consumers must accumulate rather than assign their values.
+        Indices remain int32 so the packer avoids an unnecessary int64 COO
+        round-trip.
+        """
+        all_indices, all_values, _, _ = self._weighted_entries_by_layout(coords)
+        if not all_indices:
+            return (
+                torch.zeros((3, 0), dtype=torch.int32, device=coords.device),
+                torch.zeros(0, dtype=torch.float32, device=coords.device),
+            )
+        return torch.cat(all_indices, dim=1), torch.cat(all_values)
+
+    def __call__(self, coords: torch.Tensor) -> torch.Tensor:
+        all_indices, all_values, n_poses, n_rots = self._weighted_entries_by_layout(
+            coords
+        )
 
         if n_poses is None:
             # No terms at all

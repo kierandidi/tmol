@@ -682,6 +682,34 @@ def test_rotamer_scorer_combines_identical_sparse_layouts(
     torch.testing.assert_close(coords.grad, torch.tensor(61.0, device=torch_device))
 
 
+def test_rotamer_scorer_raw_entries_keep_int32_and_uncoalesced_duplicates() -> None:
+    class SparseTerm(torch.nn.Module):
+        n_poses = 1
+        n_rots = 2
+
+        def __init__(self, indices: list[tuple[int, int]], values: list[float]) -> None:
+            super().__init__()
+            self.indices = torch.tensor(
+                [[0] * len(indices), *zip(*indices)], dtype=torch.int32
+            )
+            self.values = torch.tensor([values])
+
+        def forward(self, coords: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+            return self.values * coords, self.indices
+
+    scorer = RotamerScoringModule(
+        torch.tensor([2.0, 3.0]),
+        [SparseTerm([(0, 0), (0, 1)], [4.0, 5.0]), SparseTerm([(0, 1)], [7.0])],
+    )
+
+    indices, values = scorer.forward_sparse_entries(torch.ones(()))
+
+    assert indices.dtype == torch.int32
+    assert indices.shape == (3, 3)
+    assert torch.equal(indices[:, 1], indices[:, 2])
+    torch.testing.assert_close(values, torch.tensor([8.0, 10.0, 21.0]))
+
+
 def test_cpu_rotamer_scorer_coalesces_subset_layouts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
