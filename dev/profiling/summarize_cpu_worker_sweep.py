@@ -10,7 +10,10 @@ import re
 from pathlib import Path
 
 
-NAME = re.compile(r"score-grad-protein(?P<size>\d+)-t(?P<threads>\d+)-w(?P<workers>\d+)")
+NAME = re.compile(
+    r"score-grad-protein(?P<size>\d+)-t(?P<threads>\d+)"
+    r"-s(?P<strategy>[^-]+)-w(?P<workers>\d+)"
+)
 
 
 def main() -> None:
@@ -30,6 +33,7 @@ def main() -> None:
             {
                 "nominal_residues": int(match["size"]),
                 "threads": int(match["threads"]),
+                "strategy": match["strategy"],
                 "term_workers": int(match["workers"]),
                 "median_ms": 1000 * timing["median_seconds"],
                 "poses_per_second": timing["poses_per_second"],
@@ -41,6 +45,7 @@ def main() -> None:
         key=lambda row: (
             row["nominal_residues"],
             row["threads"],
+            row["strategy"],
             row["term_workers"],
         )
     )

@@ -35,7 +35,7 @@ find "${binary_source}/tmol" -type f -name '*.so' -exec sha256sum {} + \
     > "${output}/metadata/binary_sha256.txt"
 
 run_case() {
-    local system=$1 threads=$2 workers=$3
+    local system=$1 threads=$2 strategy=$3 workers=$4
     local pdb_candidates=(
         "${source_dir}"/tmol/tests/data/pdb/bysize_${system}_res_*.pdb
     )
@@ -44,9 +44,14 @@ run_case() {
         exit 2
     }
     local pdb=/source/tmol/tests/data/pdb/$(basename "${pdb_candidates[0]}")
-    local slug=score-grad-protein${system}-t${threads}-w${workers}
+    local shards=0
+    if [[ ${strategy} == sharded ]]; then
+        shards=auto
+    fi
+    local slug=score-grad-protein${system}-t${threads}-s${strategy}-w${workers}
     apptainer exec --bind "${binds}" --pwd /harness "${image}" \
         env PYTHONPATH=/source TMOL_USE_JIT=0 \
+        TMOL_FUSED_CPU_SHARDS="${shards}" \
         TMOL_CPU_SCORE_TERM_WORKERS="${workers}" \
         OMP_NUM_THREADS="${threads}" MKL_NUM_THREADS="${threads}" \
         OPENBLAS_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
@@ -58,8 +63,9 @@ run_case() {
 
 for system in 100 400; do
     for threads in 2 4 8 16 32; do
+        run_case "${system}" "${threads}" sharded 4
         for workers in 1 2 4 8; do
-            run_case "${system}" "${threads}" "${workers}"
+            run_case "${system}" "${threads}" terms "${workers}"
         done
     done
 done
