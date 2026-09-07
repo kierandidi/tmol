@@ -152,6 +152,23 @@ Use an exclusive GPU when comparing revisions. Nsight interception adds host
 overhead, so use the regular matrix for latency comparisons and the trace
 matrix for causal analysis.
 
+For the standard H200 score+gradient and FastRelax focus set used in the
+performance audit, submit `run_h200_focus.sbatch` with all paths explicit:
+
+```bash
+sbatch --export=ALL,\
+TMOL_PROFILE_HARNESS=$PWD,\
+TMOL_PROFILE_SOURCE=/path/to/clean/aot-candidate,\
+TMOL_PROFILE_ENV=/path/to/candidate/venv,\
+TMOL_PROFILE_IMAGE=/path/to/container.sif,\
+TMOL_PROFILE_OUTPUT=/path/to/artifacts \
+  dev/profiling/run_h200_focus.sbatch
+```
+
+The job writes ordinary synchronized timings and separate Nsight Systems
+captures for protein, DNA, and protein–ligand score+gradient at latency and
+throughput batch sizes, plus protein FastRelax at B1 and B4.
+
 ## Interpreting the traces
 
 Start at `<case>/measure`, then inspect `<case>/iteration-0`. TMol's nested NVTX
