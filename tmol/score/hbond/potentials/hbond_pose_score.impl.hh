@@ -600,11 +600,10 @@ auto HBondPoseScoreDispatch<DeviceDispatch, Dev, Real, Int>::forward(
   TView<Real, 3, Dev> scratch_rot_spheres;
   TView<Int, 3, Dev> scratch_rot_neighbors;
   if (!use_shared_compact_block_neighbors) {
-    scratch_rot_spheres_t = Dev == Device::CPU
-                                ? TPack<Real, 3, Dev>::zeros(
-                                      {n_poses, max_n_blocks, 4})
-                                : TPack<Real, 3, Dev>::empty(
-                                      {n_poses, max_n_blocks, 4});
+    scratch_rot_spheres_t =
+        Dev == Device::CPU
+            ? TPack<Real, 3, Dev>::zeros({n_poses, max_n_blocks, 4})
+            : TPack<Real, 3, Dev>::empty({n_poses, max_n_blocks, 4});
     scratch_rot_neighbors_t =
         Dev == Device::CPU
             ? TPack<Int, 3, Dev>::zeros({n_poses, max_n_blocks, max_n_blocks})
