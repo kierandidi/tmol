@@ -7,6 +7,8 @@ _ops = load_ops(
         "compiled.ops.cpp",
         "ljlk_pose_score.cpu.cpp",
         "ljlk_pose_score.cuda.cu",
+        "ljlk_elec_pose_score.cpu.cpp",
+        "ljlk_elec_pose_score.cuda.cu",
         # "rotamer_pair_energy_lk.cpu.cpp",
         # "rotamer_pair_energy_lk.cuda.cu",
     ],
