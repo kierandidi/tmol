@@ -168,6 +168,42 @@ other launches. Prefer graph replay when inputs have stable shapes and storage;
 prefer eager mode for dynamic control flow, changing shapes, or one-off calls
 where capture cost cannot be amortized.
 
+### Shared pair work and adaptive parallelism
+
+Whole-pose LJ/LK, electrostatics, hydrogen-bond, and LK-ball evaluation use the
+same conservative block-pair neighborhood. The rendered score module builds a
+single compact candidate list at the largest required cutoff and passes it to
+each compatible term. LJ/LK and electrostatics additionally use one fused
+pair traversal when the built-in modules and immutable parameters make that
+safe. Their public score lanes remain separate, so runtime weights,
+unweighted-score inspection, term removal, and block-pair scoring keep their
+normal behavior.
+
+These changes reduce duplicated distance tests, intermediate memory, and CUDA
+launches; they are independent of CUDA Graph capture and therefore improve the
+eager path too. CPU scoring uses the same representation. For one CPU pose of
+at least 150 blocks, neighbor discovery uses a deterministic spatial sweep and
+restores canonical candidate order before scoring. Smaller, batched, or
+non-finite inputs retain the quadratic builder. With multiple PyTorch CPU
+threads, independent terms and sufficiently large backward graphs may run in
+a bounded shared thread pool; a single expensive fused traversal may be
+sharded while other terms run. The thresholds intentionally preserve the
+lower-overhead serial path for small work.
+
+Large CUDA workloads may schedule independent terms on side streams. The
+forward-only graph path can retain separate LJ/LK and electrostatics kernels
+when overlap is faster than fusion, while eager and gradient scoring keep the
+fused traversal. This is why performance comparisons must report device,
+batch, gradient mode, and graph mode instead of treating one execution plan as
+universally optimal.
+
+For implementation A/B tests only, the optimized paths can be disabled with
+`TMOL_SHARED_BLOCK_NEIGHBORS=0`, `TMOL_FUSED_LJLK_ELEC=0`,
+`TMOL_CPU_SPATIAL_BLOCK_NEIGHBORS=0`, or `TMOL_FUSED_CPU_SHARDS=0`.
+These environment variables are regression controls, not stable user-facing
+configuration. Compare modes in fresh processes because the execution plan is
+selected when a score module is rendered.
+
 The Cartesian minimizer illustrates why both techniques matter. Its rendered
 score-and-gradient evaluation can use graph replay, but its Armijo line search
 has data-dependent control flow and stays eager. TMol implements the

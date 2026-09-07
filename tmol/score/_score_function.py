@@ -783,7 +783,14 @@ def _whole_pose_execution_modules(term_modules, device):
 
 
 class WholePoseScoringModule:
-    """Rendered energy modules that score complete poses."""
+    """Rendered energy modules with an adaptive whole-pose execution plan.
+
+    The public score-type layout remains identical to ``term_modules``. The
+    private execution plan may share a compact block-neighbor list, fuse the
+    built-in LJ/LK and electrostatics traversal, or overlap independent work
+    when the device, shape, gradient mode, and available CPU threads make that
+    profitable. Small workloads retain the serial term path.
+    """
 
     def __init__(
         self,
