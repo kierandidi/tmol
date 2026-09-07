@@ -830,11 +830,17 @@ class WholePoseScoringModule:
             None,
         )
         cpu_threads = torch.get_num_threads() if weights.device.type == "cpu" else 1
-        self._cpu_fused_shards = (
+        cpu_shard_setting = os.environ.get("TMOL_FUSED_CPU_SHARDS", "auto")
+        configured_cpu_shards = (
             min(8, max(2, cpu_threads // 2))
+            if cpu_shard_setting == "auto"
+            else max(0, int(cpu_shard_setting))
+        )
+        self._cpu_fused_shards = (
+            configured_cpu_shards
             if self._fused_ljlk_elec_module_index is not None
             and cpu_threads >= 2
-            and os.environ.get("TMOL_FUSED_CPU_SHARDS", "auto") != "0"
+            and configured_cpu_shards >= 2
             and self._execution_modules[
                 self._fused_ljlk_elec_module_index
             ].ljlk_module.n_poses
