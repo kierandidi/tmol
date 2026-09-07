@@ -34,7 +34,7 @@ def main() -> None:
                 "nominal_residues": int(match["size"]),
                 "threads": int(match["threads"]),
                 "strategy": match["strategy"],
-                "term_workers": int(match["workers"]),
+                "requested_term_workers": int(match["workers"]),
                 "median_ms": 1000 * timing["median_seconds"],
                 "poses_per_second": timing["poses_per_second"],
                 "source_file": str(path),
@@ -46,7 +46,7 @@ def main() -> None:
             row["nominal_residues"],
             row["threads"],
             row["strategy"],
-            row["term_workers"],
+            row["requested_term_workers"],
         )
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
