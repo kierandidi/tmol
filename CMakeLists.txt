@@ -447,6 +447,8 @@ set(_C_SOURCES
   # score/ljlk
   tmol/score/ljlk/potentials/compiled.ops.cpp
   tmol/score/ljlk/potentials/ljlk_pose_score.cpu.cpp
+  # Keep fused instantiations separate: co-locating them changes emitted weak
+  # template helpers and materially regresses the legacy rotamer scorer.
   tmol/score/ljlk/potentials/ljlk_elec_pose_score.cpu.cpp
   # score/lk_ball
   tmol/score/lk_ball/potentials/compiled.ops.cpp
