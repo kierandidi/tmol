@@ -7,6 +7,7 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 import platform
 import subprocess
 import sys
@@ -161,6 +162,7 @@ def _write_manifest(output_dir: Path, cases, trace: bool):
                 text=True,
             ).stdout
         ),
+        "tmol_source": str(Path(os.environ.get("TMOL_PROFILE_SOURCE", ROOT)).resolve()),
         "python": platform.python_version(),
         "nsys": (
             subprocess.run(

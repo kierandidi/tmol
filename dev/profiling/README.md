@@ -33,6 +33,17 @@ python dev/profiling/workflows.py \
   --warmup 5 --iterations 30 --output artifacts/result.json
 ```
 
+The profiling harness can live in a separate clean worktree from the source
+under test. Set `TMOL_PROFILE_SOURCE` to the clean AOT-built checkout; result
+JSON then records both the source and harness revisions and imports TMol from
+that exact source:
+
+```bash
+TMOL_PROFILE_SOURCE=/path/to/candidate TMOL_USE_JIT=0 \
+  python dev/profiling/workflows.py --workflow score_grad \
+  --system protein100 --batch 16 --output artifacts/result.json
+```
+
 Valid workflow names are `score`, `score_grad`, `score_graph`,
 `score_graph_grad`, `cart_min`, `kin_min`, and `fast_relax`. The runner records
 the Git revision, imported TMol path and version, GPU, driver, CUDA and PyTorch

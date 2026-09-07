@@ -16,8 +16,9 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
+HARNESS_ROOT = Path(__file__).resolve().parents[2]
+TMOL_SOURCE = Path(os.environ.get("TMOL_PROFILE_SOURCE", HARNESS_ROOT)).resolve()
+sys.path.insert(0, str(TMOL_SOURCE))
 
 import numpy as np
 import torch
@@ -38,7 +39,7 @@ from tmol.score import beta2016_score_function
 from tmol.utility._nvtx import nvtx_range
 
 
-DATA = ROOT / "tmol" / "tests" / "data"
+DATA = TMOL_SOURCE / "tmol" / "tests" / "data"
 SEED = 20260827
 
 
@@ -208,21 +209,21 @@ def _workload(pose, score_function, workflow: str, max_iter: int):
     raise ValueError(workflow)
 
 
-def _git_revision() -> str:
+def _git_revision(path: Path) -> str:
     return subprocess.run(
         ["git", "rev-parse", "HEAD"],
-        cwd=ROOT,
+        cwd=path,
         check=True,
         capture_output=True,
         text=True,
     ).stdout.strip()
 
 
-def _git_dirty() -> bool:
+def _git_dirty(path: Path) -> bool:
     return bool(
         subprocess.run(
             ["git", "status", "--porcelain", "--untracked-files=no"],
-            cwd=ROOT,
+            cwd=path,
             check=True,
             capture_output=True,
             text=True,
@@ -311,8 +312,11 @@ def run(args: argparse.Namespace) -> dict:
         "blocks_per_pose": int((pose.block_type_ind64[0] >= 0).sum()),
         "atoms_per_pose": int(pose.real_atoms[0].sum()),
         "environment": {
-            "git_revision": _git_revision(),
-            "git_dirty": _git_dirty(),
+            "git_revision": _git_revision(TMOL_SOURCE),
+            "git_dirty": _git_dirty(TMOL_SOURCE),
+            "profile_harness_revision": _git_revision(HARNESS_ROOT),
+            "profile_harness_dirty": _git_dirty(HARNESS_ROOT),
+            "tmol_source": str(TMOL_SOURCE),
             "python": platform.python_version(),
             "torch": torch.__version__,
             "tmol": tmol.__version__,
