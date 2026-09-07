@@ -12,6 +12,7 @@
 
 #include <tmol/score/common/accumulate.hh>
 #include <tmol/score/common/connection.hh>
+#include <tmol/score/common/counting.hh>
 #include <tmol/score/common/count_pair.hh>
 #include <tmol/score/common/data_loading.hh>
 #include <tmol/score/common/diamond_macros.hh>
@@ -1051,7 +1052,7 @@ auto CartBondedRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
         TPack<Real, 2, D>,          // V_t,
         TPack<Vec<Real, 3>, 2, D>,  // dV_dx_t,
         TPack<Int, 2, D>,           // dispatch_indices_t,
-        TPack<Int, 1, D>,           // n_output_intxns_for_rot_conn_offset,
+        TPack<int64_t, 1, D>,       // n_output_intxns_for_rot_conn_offset,
         TPack<Int, 1, D>            // rotconn_for_output_intxn,
         > {
   using tmol::score::common::get_connection_spanning_subgraphs_offset;
@@ -1118,14 +1119,15 @@ auto CartBondedRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
   CTA_REAL_REDUCE_T_TYPEDEF;
 
   // Convention: conn == max_n_conns ==> the intra-rotamer set of cart energies
-  int const max_n_interactions = n_rots * (max_n_conns + 1);
+  int const max_n_interactions = score::common::checked_dispatch_product(
+      n_rots, max_n_conns + 1, "Cartesian-bonded count dispatch");
 
   // Here we only count the rotconns to "upper" neighbors
   auto n_output_intxns_for_rot_conn_t =
-      TPack<Int, 1, D>::zeros({max_n_interactions});
+      TPack<int64_t, 1, D>::zeros({max_n_interactions});
   auto n_output_intxns_for_rot_conn = n_output_intxns_for_rot_conn_t.view;
   auto n_output_intxns_for_rot_conn_offset_t =
-      TPack<Int, 1, D>::zeros({max_n_interactions});
+      TPack<int64_t, 1, D>::zeros({max_n_interactions});
   auto n_output_intxns_for_rot_conn_offset =
       n_output_intxns_for_rot_conn_offset_t.view;
 
@@ -1167,13 +1169,15 @@ auto CartBondedRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::forward(
 
   // Scan and LBS on n output intxns: figure out how many rotamer pair
   // interactions there are and which pair each work unit should be assigned to.
-  int n_output_intxns_total =
+  int64_t const n_output_intxns_total_64 =
       DeviceDispatch<D>::template scan_and_return_total<mgpu::scan_type_exc>(
           mgr,
           n_output_intxns_for_rot_conn.data(),
           n_output_intxns_for_rot_conn_offset.data(),
           max_n_interactions,
-          mgpu::plus_t<Int>());
+          mgpu::plus_t<int64_t>());
+  int const n_output_intxns_total = score::common::checked_dispatch_size(
+      n_output_intxns_total_64, "Cartesian-bonded output dispatch");
   TPack<Int, 1, D> rotconn_for_output_intxn_t =
       DeviceDispatch<D>::template load_balancing_search<launch_t>(
           mgr,
@@ -1595,7 +1599,7 @@ auto CartBondedRotamerScoreDispatch<DeviceDispatch, D, Real, Int>::backward(
     TView<Vec<Int, 3>, 1, D> cart_subgraph_type_offsets,
 
     TView<Int, 2, D> dispatch_indices,
-    TView<Int, 1, D> n_output_intxns_for_rot_conn_offset,
+    TView<int64_t, 1, D> n_output_intxns_for_rot_conn_offset,
     TView<Int, 1, D> rotconn_for_output_intxn,
 
     TView<Real, 2, D> dTdV  // nterms x n-dispatch

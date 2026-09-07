@@ -12,12 +12,14 @@
 
 #include <tmol/utility/tensor/TensorAccessor.h>
 #include <tmol/score/common/accumulate.hh>
+#include <tmol/score/common/counting.hh>
 
 #include <tmol/score/common/diamond_macros.hh>
 #include <tmol/score/common/launch_box_macros.hh>
 #include <tmol/score/common/upper_triangle_indices.hh>
 
 #include <moderngpu/operators.hxx>
+#include <moderngpu/scan_types.hxx>
 #include <tmol/utility/tensor/context_manager.hh>
 
 namespace tmol {
@@ -282,15 +284,18 @@ struct detect_rot_neighbors {
       Real reach) {
     LAUNCH_BOX_32;
 
+    int const n_poses = n_rots_for_block.size(0);
+    int const max_n_rots = max_n_rots_per_pose;
+    int const rot_pairs_per_pose = common::checked_dispatch_product(
+        max_n_rots, max_n_rots, "rotamer-neighbor candidates per pose");
+    int const n_rot_pairs = common::checked_dispatch_product(
+        n_poses, rot_pairs_per_pose, "rotamer-neighbor candidates");
+
     auto detect_neighbors = ([=] TMOL_DEVICE_FUNC(int ind) {
-      int const n_poses = n_rots_for_block.size(0);
-      int const max_n_rots = max_n_rots_per_pose;
       int const n_block_types = block_type_n_atoms.size(0);
 
-      if (ind >= n_poses * max_n_rots * max_n_rots) return;
-
-      int const pose_ind = ind / (max_n_rots * max_n_rots);
-      int const rot_pair_ind = ind % (max_n_rots * max_n_rots);
+      int const pose_ind = ind / rot_pairs_per_pose;
+      int const rot_pair_ind = ind % rot_pairs_per_pose;
       int const rot_ind1 = rot_pair_ind / max_n_rots;
       int const rot_ind2 = rot_pair_ind % max_n_rots;
 
@@ -363,9 +368,6 @@ struct detect_rot_neighbors {
         rot_neighbors[pose_ind][rot_ind1][rot_ind2] = 0;
       }
     });
-    std::uint64_t n_rot_pairs = std::uint64_t(n_rots_for_block.size(0))
-                                * max_n_rots_per_pose * max_n_rots_per_pose;
-
     DeviceDispatch<D>::template forall_independent<launch_t>(
         mgr, n_rot_pairs, detect_neighbors);
   }
@@ -387,7 +389,10 @@ struct detect_block_neighbors {
 
     int const n_poses = pose_stack_block_type.size(0);
     int const max_n_blocks = pose_stack_block_type.size(1);
-    int const block_pairs_per_pose = max_n_blocks * max_n_blocks;
+    int const block_pairs_per_pose = common::checked_dispatch_product(
+        max_n_blocks, max_n_blocks, "block-neighbor candidates per pose");
+    int const n_block_pairs = common::checked_dispatch_product(
+        n_poses, block_pairs_per_pose, "block-neighbor candidates");
     auto detect_neighbors = ([=] TMOL_DEVICE_FUNC(int index) {
       int const pose_ind = index / block_pairs_per_pose;
       int const pair = index % block_pairs_per_pose;
@@ -441,7 +446,7 @@ struct detect_block_neighbors {
       }
     });
     DeviceDispatch<D>::template forall_independent<launch_t>(
-        mgr, n_poses * block_pairs_per_pose, detect_neighbors);
+        mgr, n_block_pairs, detect_neighbors);
   }
 };
 
@@ -572,8 +577,15 @@ struct detect_compact_block_neighbors {
 
     int const n_poses = pose_stack_block_type.size(0);
     int const max_n_blocks = pose_stack_block_type.size(1);
-    int const n_pairs =
-        static_cast<int>((int64_t(max_n_blocks) * (max_n_blocks + 1)) / 2);
+    int const n_pairs = common::checked_dispatch_size(
+        common::checked_count_product(
+            max_n_blocks,
+            int64_t(max_n_blocks) + 1,
+            "compact block-neighbor candidates per pose")
+            / 2,
+        "compact block-neighbor candidates per pose");
+    int const n_candidates = common::checked_dispatch_product(
+        n_poses, n_pairs, "compact block-neighbor candidates");
     if constexpr (D == tmol::Device::CPU) {
       // Sorting retained candidate IDs restores the exact canonical order used
       // by the quadratic path, so downstream accumulation is unchanged.
@@ -622,9 +634,9 @@ struct detect_compact_block_neighbors {
         neighbor_indices[candidate + 1] = candidate;
       });
       DeviceDispatch<D>::template forall_independent<launch_t>(
-          mgr, n_poses * n_pairs, detect_neighbors);
+          mgr, n_candidates, detect_neighbors);
       Int n_neighbors = 0;
-      for (int candidate = 0; candidate < n_poses * n_pairs; ++candidate) {
+      for (int candidate = 0; candidate < n_candidates; ++candidate) {
         Int const value = neighbor_indices[candidate + 1];
         if (value >= 0) neighbor_indices[++n_neighbors] = value;
       }
@@ -659,7 +671,7 @@ struct detect_compact_block_neighbors {
         neighbor_indices[output + 1] = candidate;
       });
       DeviceDispatch<D>::template forall_independent<launch_t>(
-          mgr, n_poses * n_pairs, detect_neighbors);
+          mgr, n_candidates, detect_neighbors);
     }
   }
 };
@@ -678,8 +690,15 @@ struct compact_block_neighbors {
 
     int const n_poses = block_neighbors.size(0);
     int const max_n_blocks = block_neighbors.size(1);
-    int const n_pairs =
-        static_cast<int>((int64_t(max_n_blocks) * (max_n_blocks + 1)) / 2);
+    int const n_pairs = common::checked_dispatch_size(
+        common::checked_count_product(
+            max_n_blocks,
+            int64_t(max_n_blocks) + 1,
+            "compact block-neighbor candidates per pose")
+            / 2,
+        "compact block-neighbor candidates per pose");
+    int const n_candidates = common::checked_dispatch_product(
+        n_poses, n_pairs, "compact block-neighbor candidates");
     if constexpr (D == tmol::Device::CPU) {
       auto compact = ([=] TMOL_DEVICE_FUNC(int candidate) {
         neighbor_indices[candidate] = -1;
@@ -692,9 +711,9 @@ struct compact_block_neighbors {
         neighbor_indices[candidate] = candidate;
       });
       DeviceDispatch<D>::template forall_independent<launch_t>(
-          mgr, n_poses * n_pairs, compact);
+          mgr, n_candidates, compact);
       Int count = 0;
-      for (int candidate = 0; candidate < n_poses * n_pairs; ++candidate) {
+      for (int candidate = 0; candidate < n_candidates; ++candidate) {
         Int const value = neighbor_indices[candidate];
         if (value >= 0) neighbor_indices[count++] = value;
       }
@@ -711,7 +730,7 @@ struct compact_block_neighbors {
         neighbor_indices[output] = candidate;
       });
       DeviceDispatch<D>::template forall_independent<launch_t>(
-          mgr, n_poses * n_pairs, compact);
+          mgr, n_candidates, compact);
     }
   }
 };
@@ -728,9 +747,15 @@ void launch_compact_block_neighbors(
   // grid then strides over only neighboring pairs without a host sync.
   int const n_poses = block_neighbors.size(0);
   int const max_n_blocks = block_neighbors.size(1);
-  int const n_pairs =
-      static_cast<int>((int64_t(max_n_blocks) * (max_n_blocks + 1)) / 2);
-  int const n_candidates = n_poses * n_pairs;
+  int const n_pairs = common::checked_dispatch_size(
+      common::checked_count_product(
+          max_n_blocks,
+          int64_t(max_n_blocks) + 1,
+          "compact block-neighbor candidates per pose")
+          / 2,
+      "compact block-neighbor candidates per pose");
+  int const n_candidates = common::checked_dispatch_product(
+      n_poses, n_pairs, "compact block-neighbor candidates");
   if (n_candidates == 0) return;
   auto neighbor_indices_t = TPack<Int, 1, D>::empty({n_candidates});
   auto neighbor_indices = neighbor_indices_t.view;
@@ -802,17 +827,32 @@ struct rot_neighbor_indices {
     int n_pose = rot_neighbors.size(0);
     int n_rot = rot_neighbors.size(1);
 
-    int n_cells = n_pose * n_rot * n_rot;
-    auto offset_for_cell_tp = TPack<Int, 3, D>::zeros_like(rot_neighbors);
+    int const pose_rot_cells = common::checked_dispatch_product(
+        n_pose, n_rot, "rotamer-neighbor dispatch candidates");
+    int const n_cells = common::checked_dispatch_product(
+        pose_rot_cells, n_rot, "rotamer-neighbor dispatch candidates");
+    auto count_for_cell_tp =
+        TPack<int64_t, 3, D>::zeros({n_pose, n_rot, n_rot});
+    auto count_for_cell = count_for_cell_tp.view;
+    auto copy_counts = ([=] TMOL_DEVICE_FUNC(int ind) {
+      count_for_cell.data()[ind] = rot_neighbors.data()[ind];
+    });
+    DeviceDispatch<D>::template forall_independent<launch_t>(
+        mgr, n_cells, copy_counts);
+
+    auto offset_for_cell_tp =
+        TPack<int64_t, 3, D>::empty({n_pose, n_rot, n_rot});
     auto offset_for_cell = offset_for_cell_tp.view;
 
-    int n_dispatch_total =
+    int64_t const n_dispatch_total_64 =
         DeviceDispatch<D>::template scan_and_return_total<mgpu::scan_type_exc>(
             mgr,
-            rot_neighbors.data(),
+            count_for_cell.data(),
             offset_for_cell.data(),
             n_cells,
-            mgpu::plus_t<Int>());
+            mgpu::plus_t<int64_t>());
+    int const n_dispatch_total = common::checked_dispatch_size(
+        n_dispatch_total_64, "rotamer-neighbor dispatch");
 
     auto rot_neighbor_indices =
         TPack<Int, 2, D>::full({3, n_dispatch_total}, -1);
@@ -851,17 +891,32 @@ struct block_neighbor_indices {
     int n_pose = block_neighbors.size(0);
     int n_res = block_neighbors.size(1);
 
-    int n_cells = n_pose * n_res * n_res;
-    auto offset_for_cell_tp = TPack<Int, 3, D>::zeros_like(block_neighbors);
+    int const pose_res_cells = common::checked_dispatch_product(
+        n_pose, n_res, "block-neighbor dispatch candidates");
+    int const n_cells = common::checked_dispatch_product(
+        pose_res_cells, n_res, "block-neighbor dispatch candidates");
+    auto count_for_cell_tp =
+        TPack<int64_t, 3, D>::zeros({n_pose, n_res, n_res});
+    auto count_for_cell = count_for_cell_tp.view;
+    auto copy_counts = ([=] TMOL_DEVICE_FUNC(int ind) {
+      count_for_cell.data()[ind] = block_neighbors.data()[ind];
+    });
+    DeviceDispatch<D>::template forall_independent<launch_t>(
+        mgr, n_cells, copy_counts);
+
+    auto offset_for_cell_tp =
+        TPack<int64_t, 3, D>::empty({n_pose, n_res, n_res});
     auto offset_for_cell = offset_for_cell_tp.view;
 
-    int n_dispatch_total =
+    int64_t const n_dispatch_total_64 =
         DeviceDispatch<D>::template scan_and_return_total<mgpu::scan_type_exc>(
             mgr,
-            block_neighbors.data(),
+            count_for_cell.data(),
             offset_for_cell.data(),
             n_cells,
-            mgpu::plus_t<Int>());
+            mgpu::plus_t<int64_t>());
+    int const n_dispatch_total = common::checked_dispatch_size(
+        n_dispatch_total_64, "block-neighbor dispatch");
 
     auto block_neighbor_indices =
         TPack<Int, 2, D>::full({3, n_dispatch_total}, -1);
@@ -909,6 +964,8 @@ struct compute_block_spheres_from_rot_spheres {
 
     int const n_poses = n_rots_for_block.size(0);
     int const max_n_blocks = n_rots_for_block.size(1);
+    int const n_pose_blocks = common::checked_dispatch_product(
+        n_poses, max_n_blocks, "rotamer block-sphere dispatch");
 
     auto compute = ([=] TMOL_DEVICE_FUNC(int ind) {
       int const pose = ind / max_n_blocks;
@@ -945,7 +1002,7 @@ struct compute_block_spheres_from_rot_spheres {
     });
 
     DeviceDispatch<D>::template forall_independent<launch_t>(
-        mgr, n_poses * max_n_blocks, compute);
+        mgr, n_pose_blocks, compute);
   }
 };
 
@@ -968,17 +1025,23 @@ struct rot_neighbor_indices_from_block_neighbors {
 
     int const n_poses = block_neighbors.size(0);
     int const max_n_blocks = block_neighbors.size(1);
-    int const n_cells = n_poses * max_n_blocks * max_n_blocks;
+    int const block_pair_cells = common::checked_dispatch_product(
+        max_n_blocks,
+        max_n_blocks,
+        "rotamer block-pair dispatch candidates per pose");
+    int const n_cells = common::checked_dispatch_product(
+        n_poses, block_pair_cells, "rotamer block-pair dispatch candidates");
 
     // Step 1: per-block-pair rotamer pair counts.
     // For diagonal (b1==b2): only self-pairs (r,r), count = n_rots[b1].
     // For off-diagonal (b1<b2): all pairs, count = n_rots[b1]*n_rots[b2].
-    auto pair_counts_t = TPack<Int, 3, D>::zeros_like(block_neighbors);
+    auto pair_counts_t =
+        TPack<int64_t, 3, D>::zeros({n_poses, max_n_blocks, max_n_blocks});
     auto pair_counts = pair_counts_t.view;
 
     auto compute_counts = ([=] TMOL_DEVICE_FUNC(int ind) {
-      int const pose = ind / (max_n_blocks * max_n_blocks);
-      int const bp = ind % (max_n_blocks * max_n_blocks);
+      int const pose = ind / block_pair_cells;
+      int const bp = ind % block_pair_cells;
       int const b1 = bp / max_n_blocks;
       int const b2 = bp % max_n_blocks;
       if (block_neighbors[pose][b1][b2]) {
@@ -986,7 +1049,7 @@ struct rot_neighbor_indices_from_block_neighbors {
           pair_counts[pose][b1][b2] = n_rots_for_block[pose][b1];
         } else {
           pair_counts[pose][b1][b2] =
-              n_rots_for_block[pose][b1] * n_rots_for_block[pose][b2];
+              int64_t(n_rots_for_block[pose][b1]) * n_rots_for_block[pose][b2];
         }
       }
     });
@@ -994,16 +1057,19 @@ struct rot_neighbor_indices_from_block_neighbors {
         mgr, n_cells, compute_counts);
 
     // Step 2: prefix scan → per-block-pair offsets and total
-    auto pair_offsets_t = TPack<Int, 3, D>::zeros_like(block_neighbors);
+    auto pair_offsets_t =
+        TPack<int64_t, 3, D>::zeros({n_poses, max_n_blocks, max_n_blocks});
     auto pair_offsets = pair_offsets_t.view;
 
-    int const total =
+    int64_t const total_64 =
         DeviceDispatch<D>::template scan_and_return_total<mgpu::scan_type_exc>(
             mgr,
             pair_counts.data(),
             pair_offsets.data(),
             n_cells,
-            mgpu::plus_t<Int>());
+            mgpu::plus_t<int64_t>());
+    int const total =
+        common::checked_dispatch_size(total_64, "rotamer block-pair dispatch");
 
     // Step 3: allocate output [3, total]
     auto indices_t = TPack<Int, 2, D>::full({3, total}, -1);
@@ -1013,8 +1079,8 @@ struct rot_neighbor_indices_from_block_neighbors {
     // Diagonal (b1==b2): only (r,r) self-pairs (intrares scoring).
     // Off-diagonal (b1<b2): all nr1*nr2 pairs.
     auto fill = ([=] TMOL_DEVICE_FUNC(int ind) {
-      int const pose = ind / (max_n_blocks * max_n_blocks);
-      int const bp = ind % (max_n_blocks * max_n_blocks);
+      int const pose = ind / block_pair_cells;
+      int const bp = ind % block_pair_cells;
       int const b1 = bp / max_n_blocks;
       int const b2 = bp % max_n_blocks;
       if (!block_neighbors[pose][b1][b2]) return;
@@ -1025,7 +1091,7 @@ struct rot_neighbor_indices_from_block_neighbors {
       int const off2 = rot_offset_for_block[pose][b2];
       if (off1 < 0 || off2 < 0) return;
 
-      int offset = pair_offsets[pose][b1][b2];
+      int64_t offset = pair_offsets[pose][b1][b2];
       if (b1 == b2) {
         for (int i = 0; i < nr1; ++i) {
           indices[0][offset] = pose;
