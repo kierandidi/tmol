@@ -39,3 +39,7 @@ apptainer exec --nv --bind "${binds}" --pwd /harness "${image}" \
 apptainer exec --bind "${output}:/artifacts" "${image}" \
     ncu --import /artifacts/ncu/fast-relax-protein100-b1.ncu-rep \
     --page details --csv > "${output}/ncu/fast-relax-protein100-b1-details.csv"
+
+python3 "${harness}/dev/profiling/summarize_ncu.py" \
+    "${output}/ncu/fast-relax-protein100-b1-details.csv" \
+    --output "${output}/ncu/fast-relax-protein100-b1-summary.md"

@@ -182,8 +182,9 @@ its packing, energy-table, annealing, and minimization stages.
 `run_ncu_focus.sbatch` uses the same path contract and captures one H200
 simulated-annealing kernel from B1 protein FastRelax with the full Nsight
 Compute metric set. It exports both the native `.ncu-rep` and a CSV details
-page; keep the native report because future Nsight versions may derive more
-views from it than the stable text export contains.
+page, then `summarize_ncu.py` extracts stable headline metrics and profiler
+rules into Markdown. Keep the native report because future Nsight versions may
+derive more views from it than the stable text export contains.
 
 ## Interpreting the traces
 
