@@ -22,14 +22,17 @@ binary_candidates=("${binary_source}"/tmol/_C*.so)
     echo "No compiled tmol/_C extension under ${binary_source}" >&2
     exit 2
 }
-binary_so=${binary_candidates[0]}
-binary_name=$(basename "${binary_so}")
-binds="${harness}:/harness,${source_dir}:/source,${binary_so}:/source/tmol/${binary_name},${output}:/artifacts"
+binds="${harness}:/harness,${source_dir}:/source,${output}:/artifacts"
+while IFS= read -r binary_so; do
+    relative_binary=${binary_so#"${binary_source}"/}
+    binds+=",${binary_so}:/source/${relative_binary}"
+done < <(find "${binary_source}/tmol" -type f -name '*.so' | sort)
 
 git -C "${source_dir}" rev-parse HEAD > "${output}/metadata/source_revision.txt"
 git -C "${source_dir}" status --short > "${output}/metadata/source_status.txt"
 lscpu > "${output}/metadata/lscpu.txt"
-sha256sum "${binary_so}" > "${output}/metadata/binary_sha256.txt"
+find "${binary_source}/tmol" -type f -name '*.so' -exec sha256sum {} + \
+    > "${output}/metadata/binary_sha256.txt"
 
 run_case() {
     local system=$1 threads=$2 workers=$3
