@@ -117,7 +117,7 @@ def _tmol_workload(args: argparse.Namespace) -> Workload:
 
     from tmol.database import ParameterDatabase
     from tmol.io import pose_stack_from_pdb
-    from tmol.optimization import CartesianMinimizer, run_cart_min
+    from tmol.optimization import run_cart_min
     from tmol.pack import PackerPalette, PackerTask, pack_rotamers
     from tmol.pack.rotamer import FixedAAChiSampler, IncludeCurrentSampler
     from tmol.pack.rotamer.dunbrack import create_dunbrack_sampler_from_database
@@ -171,6 +171,14 @@ def _tmol_workload(args: argparse.Namespace) -> Workload:
             return coords.grad
 
     elif args.workflow == "cart-min":
+        if args.reuse_topology:
+            try:
+                from tmol.optimization import CartesianMinimizer
+            except ImportError as error:
+                raise RuntimeError(
+                    "--reuse-topology requires a TMol revision that provides "
+                    "CartesianMinimizer"
+                ) from error
         reusable_minimizer = (
             CartesianMinimizer(cuda_graph=args.cuda_graph)
             if args.reuse_topology
