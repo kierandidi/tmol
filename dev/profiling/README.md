@@ -172,6 +172,13 @@ The job writes ordinary synchronized timings and separate Nsight Systems
 captures for protein, DNA, and protein–ligand score+gradient at latency and
 throughput batch sizes, plus protein FastRelax at B1 and B4.
 
+For operator-level CPU profiles of 100- and 400-residue score-plus-gradient
+workloads at one and sixteen threads, submit `run_cpu_focus.sbatch` with the
+same five explicit path variables. It writes ordinary timing JSON plus PyTorch
+operator CSVs, readable top-100 tables, and Chrome traces. FastRelax needs the
+separate phase/call-count harness because one aggregate operator table hides
+its packing, energy-table, annealing, and minimization stages.
+
 ## Interpreting the traces
 
 Start at `<case>/measure`, then inspect `<case>/iteration-0`. TMol's nested NVTX
