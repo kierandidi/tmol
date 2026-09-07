@@ -20,7 +20,14 @@ binds="${harness}:/harness,${source_dir}:/source,${output}:/artifacts"
 
 run_case() {
     local system=$1 threads=$2
-    local pdb=/source/tmol/tests/data/pdb/bysize_${system}_res_*.pdb
+    local pdb_candidates=(
+        "${source_dir}"/tmol/tests/data/pdb/bysize_${system}_res_*.pdb
+    )
+    [[ -f ${pdb_candidates[0]} ]] || {
+        echo "No source PDB matched size ${system}" >&2
+        exit 2
+    }
+    local pdb=/source/tmol/tests/data/pdb/$(basename "${pdb_candidates[0]}")
     local slug=score-grad-protein${system}-t${threads}
     apptainer exec --bind "${binds}" --pwd /harness "${image}" \
         env PYTHONPATH=/source TMOL_USE_JIT=0 \
@@ -28,7 +35,7 @@ run_case() {
         OPENBLAS_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
         "${environment}/bin/python" dev/benchmarks/rosetta_comparison.py \
         --engine tmol --workflow score-grad --device cpu --threads "${threads}" \
-        --pdb ${pdb} --warmup 5 --repeats 15 --profile-repeats 3 \
+        --pdb "${pdb}" --warmup 5 --repeats 15 --profile-repeats 3 \
         --profile-dir "/artifacts/operators/${slug}" \
         --output "/artifacts/results/${slug}.json"
 }
