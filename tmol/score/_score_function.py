@@ -66,7 +66,13 @@ def _cpu_score_term_worker_count(n_terms: int, device: torch.device) -> int:
     if device.type != "cpu":
         return 0
     n_threads = torch.get_num_threads()
-    return min(_MAX_CPU_SCORE_TERM_WORKERS, n_threads, n_terms)
+    configured_workers = os.environ.get("TMOL_CPU_SCORE_TERM_WORKERS")
+    max_workers = (
+        max(1, int(configured_workers))
+        if configured_workers is not None
+        else _MAX_CPU_SCORE_TERM_WORKERS
+    )
+    return min(max_workers, n_threads, n_terms)
 
 
 def _reset_cpu_score_term_executors_after_fork() -> None:
