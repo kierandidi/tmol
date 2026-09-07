@@ -842,9 +842,10 @@ struct Annealer {
 
     // Now launch the kernels we have created
     std::shared_ptr<mgpu::standard_context_t> context = current_context(mgr);
-    // Pack four independent trajectory warps per CTA. Their global thread IDs
-    // and Philox streams stay unchanged while CTA scheduling overhead falls.
-    constexpr int annealer_cta_threads = 128;
+    // Pack two independent trajectory warps per CTA. Their global thread IDs
+    // and Philox streams stay unchanged. A 500-trajectory B1 pack then exposes
+    // 250 CTAs, enough to fill both waves on GPUs with more than 120 SMs.
+    constexpr int annealer_cta_threads = 64;
 
     // On Ampere and newer, longer trajectories amortize a small amount of spill
     // traffic and benefit from extra latency hiding. Short and older-GPU
