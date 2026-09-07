@@ -55,6 +55,7 @@ struct ScoringData {
   Real total_ljrep;
   Real total_lk;
   Real total_elec;
+  Real total_weighted;
 };
 
 template <typename Real>
@@ -102,7 +103,7 @@ TMOL_DEVICE_FUNC int inter_separation(
   return separation;
 }
 
-template <bool require_gradient, typename Real, tmol::Device D>
+template <bool require_gradient, bool weighted, typename Real, tmol::Device D>
 TMOL_DEVICE_FUNC std::array<Real, 4> score_atom_pair(
     int atom1,
     int atom2,
@@ -111,7 +112,8 @@ TMOL_DEVICE_FUNC std::array<Real, 4> score_atom_pair(
     ScoringData<Real> const& data,
     int ljlk_separation,
     int elec_separation,
-    TView<Eigen::Matrix<Real, 3, 1>, 2, D> dV_dcoords) {
+    TView<Eigen::Matrix<Real, 3, 1>, 2, D> dV_dcoords,
+    TView<Real, 1, D> score_weights) {
   if (ljlk_separation < 4 && elec_separation < 4) {
     return {0, 0, 0, 0};
   }
@@ -200,30 +202,87 @@ TMOL_DEVICE_FUNC std::array<Real, 4> score_atom_pair(
     Real3 const unit_delta = delta / dist;
     Real const radial_derivs[4] = {
         ljatr_deriv, ljrep_deriv, lk_deriv, elec_deriv};
-#pragma unroll
-    for (int score_type = 0; score_type < 4; ++score_type) {
-      Real3 const dxyz1 = radial_derivs[score_type] * unit_delta;
+    if constexpr (weighted) {
+      Real const weighted_deriv =
+          score_weights[0] * radial_derivs[0]
+          + score_weights[1] * radial_derivs[1]
+          + score_weights[2] * radial_derivs[2]
+          + score_weights[3] * radial_derivs[3];
+      Real3 const dxyz1 = weighted_deriv * unit_delta;
 #pragma unroll
       for (int axis = 0; axis < 3; ++axis) {
         if (dxyz1[axis] == 0) continue;
         accumulate<D, Real>::add(
-            dV_dcoords[score_type][data.r1.rot_coord_offset + start1 + atom1]
-                      [axis],
+            dV_dcoords[0][data.r1.rot_coord_offset + start1 + atom1][axis],
             dxyz1[axis]);
         accumulate<D, Real>::add(
-            dV_dcoords[score_type][data.r2.rot_coord_offset + start2 + atom2]
-                      [axis],
+            dV_dcoords[0][data.r2.rot_coord_offset + start2 + atom2][axis],
             -dxyz1[axis]);
+      }
+    } else {
+#pragma unroll
+      for (int score_type = 0; score_type < 4; ++score_type) {
+        Real3 const dxyz1 = radial_derivs[score_type] * unit_delta;
+#pragma unroll
+        for (int axis = 0; axis < 3; ++axis) {
+          if (dxyz1[axis] == 0) continue;
+          accumulate<D, Real>::add(
+              dV_dcoords[score_type][data.r1.rot_coord_offset + start1 + atom1]
+                        [axis],
+              dxyz1[axis]);
+          accumulate<D, Real>::add(
+              dV_dcoords[score_type][data.r2.rot_coord_offset + start2 + atom2]
+                        [axis],
+              -dxyz1[axis]);
+        }
       }
     }
   }
   return {ljatr, ljrep, lk_value, elec_value};
 }
 
+template <
+    bool weighted,
+    template <tmol::Device> class DeviceOperations,
+    tmol::Device D,
+    int nt,
+    typename Real,
+    typename Shared>
+TMOL_DEVICE_FUNC void store_score_totals(
+    int tid,
+    ScoringData<Real>& data,
+    Shared& shared,
+    TView<Real, 4, D> output) {
+  if constexpr (weighted) {
+    Real const total = DeviceOperations<D>::template reduce_in_workgroup<nt>(
+        data.total_weighted, shared, mgpu::plus_t<Real>());
+    if (tid == 0) {
+      accumulate<D, Real>::add(output[0][data.pose_ind][0][0], total);
+    }
+  } else {
+    Real const totals[4] = {
+        DeviceOperations<D>::template reduce_in_workgroup<nt>(
+            data.total_ljatr, shared, mgpu::plus_t<Real>()),
+        DeviceOperations<D>::template reduce_in_workgroup<nt>(
+            data.total_ljrep, shared, mgpu::plus_t<Real>()),
+        DeviceOperations<D>::template reduce_in_workgroup<nt>(
+            data.total_lk, shared, mgpu::plus_t<Real>()),
+        DeviceOperations<D>::template reduce_in_workgroup<nt>(
+            data.total_elec, shared, mgpu::plus_t<Real>())};
+    if (tid == 0) {
+      for (int score_type = 0; score_type < 4; ++score_type) {
+        accumulate<D, Real>::add(
+            output[score_type][data.pose_ind][0][0], totals[score_type]);
+      }
+    }
+  }
+}
+
 }  // namespace ljlk_elec_detail
 
 template <
     bool require_gradient,
+    bool weighted,
     template <tmol::Device> class DeviceOperations,
     tmol::Device D,
     typename Real,
@@ -258,7 +317,8 @@ auto ljlk_elec_forward_impl(
     TView<Int, 3, D> block_type_elec_intra_repr_path_distance,
     TView<tmol::score::elec::potentials::ElecGlobalParams<Real>, 1, D>
         elec_global_params,
-    TView<Int, 1, D> shared_compact_block_neighbors)
+    TView<Int, 1, D> shared_compact_block_neighbors,
+    TView<Real, 1, D> score_weights)
     -> std::tuple<TPack<Real, 4, D>, TPack<LJLKExternalVec<Real, 3>, 2, D>> {
   using namespace ljlk_elec_detail;
   using Real3 = Eigen::Matrix<Real, 3, 1>;
@@ -277,10 +337,14 @@ auto ljlk_elec_forward_impl(
   (void)n_rots_for_block;
   (void)max_n_rots_per_pose;
 
-  auto output_t = TPack<Real, 4, D>::zeros({4, n_poses, 1, 1});
+  int constexpr n_output_scores = weighted ? 1 : 4;
+  auto output_t =
+      TPack<Real, 4, D>::zeros({n_output_scores, n_poses, 1, 1});
   auto output = output_t.view;
-  auto dV_dcoords_t = require_gradient ? TPack<Real3, 2, D>::zeros({4, n_atoms})
-                                       : TPack<Real3, 2, D>::empty({4, 0});
+  auto dV_dcoords_t =
+      require_gradient
+          ? TPack<Real3, 2, D>::zeros({n_output_scores, n_atoms})
+          : TPack<Real3, 2, D>::empty({n_output_scores, 0});
   auto dV_dcoords = dV_dcoords_t.view;
 
   LAUNCH_BOX_32_OCC_AS(launch_t, 32);
@@ -349,6 +413,7 @@ auto ljlk_elec_forward_impl(
       data.total_ljrep = 0;
       data.total_lk = 0;
       data.total_elec = 0;
+      data.total_weighted = 0;
     });
 
     auto load_tile = ([=] TMOL_DEVICE_FUNC(
@@ -496,7 +561,7 @@ auto ljlk_elec_forward_impl(
           elec_sep =
               inter_separation(pair_data, atom1, atom2, true, crossover_3full);
         }
-        return score_atom_pair<require_gradient, Real, D>(
+        return score_atom_pair<require_gradient, weighted, Real, D>(
             atom1,
             atom2,
             pair_start1,
@@ -504,7 +569,8 @@ auto ljlk_elec_forward_impl(
             pair_data,
             lj_sep,
             elec_sep,
-            dV_dcoords);
+            dV_dcoords,
+            score_weights);
       });
       auto evaluate = ([&](int tid) {
         std::array<Real, 4> scores;
@@ -531,10 +597,19 @@ auto ljlk_elec_forward_impl(
               Int>::
               eval_interres_atom_pair(tid, start1, start2, pair_score, data);
         }
-        data.total_ljatr += scores[0];
-        data.total_ljrep += scores[1];
-        data.total_lk += scores[2];
-        data.total_elec += scores[3];
+        // Keep the per-pair accumulation in this hot lambda. In particular,
+        // GCC did not reliably inline the earlier helper through the CPU
+        // workgroup abstraction, erasing the compact path's CPU gain.
+        if constexpr (weighted) {
+          data.total_weighted +=
+              score_weights[0] * scores[0] + score_weights[1] * scores[1]
+              + score_weights[2] * scores[2] + score_weights[3] * scores[3];
+        } else {
+          data.total_ljatr += scores[0];
+          data.total_ljrep += scores[1];
+          data.total_lk += scores[2];
+          data.total_elec += scores[3];
+        }
       });
       DeviceOperations<D>::template for_each_in_workgroup<nt>(evaluate);
     });
@@ -616,22 +691,8 @@ auto ljlk_elec_forward_impl(
     auto store_energies =
         ([=] TMOL_DEVICE_FUNC(ScoringData<Real> & data, shared_mem_union & sm) {
           auto reduce = ([&](int tid) {
-            Real const totals[4] = {
-                DeviceOperations<D>::template reduce_in_workgroup<nt>(
-                    data.total_ljatr, sm, mgpu::plus_t<Real>()),
-                DeviceOperations<D>::template reduce_in_workgroup<nt>(
-                    data.total_ljrep, sm, mgpu::plus_t<Real>()),
-                DeviceOperations<D>::template reduce_in_workgroup<nt>(
-                    data.total_lk, sm, mgpu::plus_t<Real>()),
-                DeviceOperations<D>::template reduce_in_workgroup<nt>(
-                    data.total_elec, sm, mgpu::plus_t<Real>())};
-            if (tid == 0) {
-              for (int score_type = 0; score_type < 4; ++score_type) {
-                accumulate<D, Real>::add(
-                    output[score_type][data.pose_ind][0][0],
-                    totals[score_type]);
-              }
-            }
+            store_score_totals<weighted, DeviceOperations, D, nt>(
+                tid, data, sm, output);
           });
           DeviceOperations<D>::template for_each_in_workgroup<nt>(reduce);
         });
@@ -724,13 +785,147 @@ auto LJLKAndElecPoseScoreDispatch<DeviceOperations, D, Real, Int>::forward(
       block_type_elec_inter_repr_path_distance,                               \
       block_type_elec_intra_repr_path_distance, elec_global_params,           \
       shared_compact_block_neighbors
+  auto empty_weights = TPack<Real, 1, D>::empty({0});
   if (require_gradient) {
-    return ljlk_elec_forward_impl<true, DeviceOperations, D, Real, Int>(
-        TMOL_LJLK_ELEC_FORWARD_ARGS);
+    return ljlk_elec_forward_impl<true, false, DeviceOperations, D, Real, Int>(
+        TMOL_LJLK_ELEC_FORWARD_ARGS, empty_weights.view);
   }
-  return ljlk_elec_forward_impl<false, DeviceOperations, D, Real, Int>(
-      TMOL_LJLK_ELEC_FORWARD_ARGS);
+  return ljlk_elec_forward_impl<false, false, DeviceOperations, D, Real, Int>(
+      TMOL_LJLK_ELEC_FORWARD_ARGS, empty_weights.view);
 #undef TMOL_LJLK_ELEC_FORWARD_ARGS
+}
+
+template <
+    template <tmol::Device> class DeviceOperations,
+    tmol::Device D,
+    typename Real,
+    typename Int>
+auto LJLKAndElecPoseScoreDispatch<DeviceOperations, D, Real, Int>::
+    forward_weighted(
+        ContextManager& mgr,
+        TView<LJLKExternalVec<Real, 3>, 1, D> rot_coords,
+        TView<Int, 1, D> rot_coord_offset,
+        TView<Int, 1, D> pose_ind_for_atom,
+        TView<Int, 2, D> first_rot_for_block,
+        TView<Int, 2, D> first_rot_block_type,
+        TView<Int, 1, D> block_ind_for_rot,
+        TView<Int, 1, D> pose_ind_for_rot,
+        TView<Int, 1, D> block_type_ind_for_rot,
+        TView<Int, 1, D> n_rots_for_pose,
+        TView<Int, 1, D> rot_offset_for_pose,
+        TView<Int, 2, D> n_rots_for_block,
+        TView<Int, 2, D> rot_offset_for_block,
+        Int max_n_rots_per_pose,
+        TView<Int, 3, D> pose_stack_min_bond_separation,
+        TView<Int, 5, D> pose_stack_inter_block_bondsep,
+        TView<Int, 1, D> block_type_n_atoms,
+        TView<Int, 2, D> block_type_atom_types,
+        TView<Int, 1, D> block_type_n_interblock_bonds,
+        TView<Int, 2, D> block_type_atoms_forming_chemical_bonds,
+        TView<Int, 3, D> block_type_ljlk_path_distance,
+        TView<Int, 1, D> block_type_is_ligand_fragment,
+        TView<LJLKTypeParams<Real>, 1, D> ljlk_type_params,
+        TView<LJGlobalParams<Real>, 1, D> ljlk_global_params,
+        TView<Real, 2, D> block_type_partial_charge,
+        TView<Int, 3, D> block_type_elec_inter_repr_path_distance,
+        TView<Int, 3, D> block_type_elec_intra_repr_path_distance,
+        TView<tmol::score::elec::potentials::ElecGlobalParams<Real>, 1, D>
+            elec_global_params,
+        TView<Int, 1, D> shared_compact_block_neighbors,
+        TView<Real, 1, D> score_weights,
+        bool require_gradient)
+    -> std::tuple<TPack<Real, 4, D>, TPack<LJLKExternalVec<Real, 3>, 2, D>> {
+#define TMOL_LJLK_ELEC_WEIGHTED_FORWARD_ARGS                                 \
+  mgr, rot_coords, rot_coord_offset, pose_ind_for_atom, first_rot_for_block,  \
+      first_rot_block_type, block_ind_for_rot, pose_ind_for_rot,              \
+      block_type_ind_for_rot, n_rots_for_pose, rot_offset_for_pose,           \
+      n_rots_for_block, rot_offset_for_block, max_n_rots_per_pose,            \
+      pose_stack_min_bond_separation, pose_stack_inter_block_bondsep,         \
+      block_type_n_atoms, block_type_atom_types,                              \
+      block_type_n_interblock_bonds, block_type_atoms_forming_chemical_bonds, \
+      block_type_ljlk_path_distance, block_type_is_ligand_fragment,           \
+      ljlk_type_params, ljlk_global_params, block_type_partial_charge,        \
+      block_type_elec_inter_repr_path_distance,                               \
+      block_type_elec_intra_repr_path_distance, elec_global_params,           \
+      shared_compact_block_neighbors, score_weights
+  if (require_gradient) {
+    return ljlk_elec_forward_impl<true, true, DeviceOperations, D, Real, Int>(
+        TMOL_LJLK_ELEC_WEIGHTED_FORWARD_ARGS);
+  }
+  return ljlk_elec_forward_impl<false, true, DeviceOperations, D, Real, Int>(
+      TMOL_LJLK_ELEC_WEIGHTED_FORWARD_ARGS);
+#undef TMOL_LJLK_ELEC_WEIGHTED_FORWARD_ARGS
+}
+
+template <
+    template <tmol::Device> class DeviceOperations,
+    tmol::Device D,
+    typename Real,
+    typename Int>
+auto LJLKAndElecPoseScoreDispatch<DeviceOperations, D, Real, Int>::
+    reduce_weighted_scores(
+        ContextManager& mgr,
+        TView<Real, 2, D> score_lanes,
+        TView<Real, 2, D> score_weights,
+        Int fused_weight_begin,
+        Int fused_weight_width) -> TPack<Real, 1, D> {
+  int const n_score_lanes = score_lanes.size(0);
+  int const n_poses = score_lanes.size(1);
+  auto output_t = TPack<Real, 1, D>::empty({n_poses});
+  auto output = output_t.view;
+  LAUNCH_BOX_32_OCC_AS(launch_t, 32);
+  DeviceOperations<D>::template forall<launch_t>(
+      mgr, n_poses, [=] TMOL_DEVICE_FUNC(int pose) {
+        Real total = 0;
+        for (int lane = 0; lane < n_score_lanes; ++lane) {
+          if (lane == fused_weight_begin) {
+            total += score_lanes[lane][pose];
+            continue;
+          }
+          int weight_index = lane;
+          if (lane > fused_weight_begin) {
+            weight_index += fused_weight_width - 1;
+          }
+          total += score_weights[weight_index][0] * score_lanes[lane][pose];
+        }
+        output[pose] = total;
+      });
+  return output_t;
+}
+
+template <
+    template <tmol::Device> class DeviceOperations,
+    tmol::Device D,
+    typename Real,
+    typename Int>
+auto LJLKAndElecPoseScoreDispatch<DeviceOperations, D, Real, Int>::
+    reduce_weighted_score_gradients(
+        ContextManager& mgr,
+        TView<Real, 1, D> output_gradient,
+        TView<Real, 2, D> score_weights,
+        Int n_score_lanes,
+        Int fused_weight_begin,
+        Int fused_weight_width) -> TPack<Real, 2, D> {
+  int const n_poses = output_gradient.size(0);
+  auto lane_gradients_t =
+      TPack<Real, 2, D>::empty({n_score_lanes, n_poses});
+  auto lane_gradients = lane_gradients_t.view;
+  LAUNCH_BOX_32_OCC_AS(launch_t, 32);
+  DeviceOperations<D>::template forall<launch_t>(
+      mgr, n_score_lanes * n_poses, [=] TMOL_DEVICE_FUNC(int index) {
+        int const lane = index / n_poses;
+        int const pose = index - lane * n_poses;
+        Real multiplier = 1;
+        if (lane != fused_weight_begin) {
+          int weight_index = lane;
+          if (lane > fused_weight_begin) {
+            weight_index += fused_weight_width - 1;
+          }
+          multiplier = score_weights[weight_index][0];
+        }
+        lane_gradients[lane][pose] = multiplier * output_gradient[pose];
+      });
+  return lane_gradients_t;
 }
 
 }  // namespace potentials

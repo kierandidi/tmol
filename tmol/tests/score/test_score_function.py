@@ -260,6 +260,45 @@ def test_cpu_fused_shard_planner_preserves_fallbacks(
     assert all(term.classname != "LJLK+Elec" for term in batched._execution_modules)
 
 
+def test_weighted_fused_score_adaptive_dispatch(monkeypatch):
+    cpu = torch.zeros((1, 10, 3))
+    assert score_function_module._use_weighted_fused_score(cpu)
+
+    monkeypatch.setenv("TMOL_FUSED_WEIGHTED_SCORE", "0")
+    assert not score_function_module._use_weighted_fused_score(cpu)
+    monkeypatch.setenv("TMOL_FUSED_WEIGHTED_SCORE", "1")
+    assert score_function_module._use_weighted_fused_score(cpu)
+    monkeypatch.setenv("TMOL_FUSED_WEIGHTED_SCORE", "invalid")
+    with pytest.raises(ValueError, match="must be 'auto', '0', or '1'"):
+        score_function_module._use_weighted_fused_score(cpu)
+
+
+def test_weighted_fused_score_cuda_adaptive_dispatch(monkeypatch):
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA is not available")
+    monkeypatch.setenv("TMOL_FUSED_WEIGHTED_SCORE", "auto")
+    device = torch.device("cuda")
+
+    assert not score_function_module._use_weighted_fused_score(
+        torch.zeros((1, 14_999, 3), device=device)
+    )
+    assert score_function_module._use_weighted_fused_score(
+        torch.zeros((1, 15_000, 3), device=device)
+    )
+    assert not score_function_module._use_weighted_fused_score(
+        torch.zeros((32, 1_999, 3), device=device)
+    )
+    assert score_function_module._use_weighted_fused_score(
+        torch.zeros((32, 2_000, 3), device=device)
+    )
+    assert not score_function_module._use_weighted_fused_score(
+        torch.zeros((29, 730, 3), device=device), needs_gradient=True
+    )
+    assert score_function_module._use_weighted_fused_score(
+        torch.zeros((30, 730, 3), device=device), needs_gradient=True
+    )
+
+
 @pytest.mark.parametrize(
     "shape, message",
     [
@@ -756,6 +795,7 @@ def test_cuda_graphed_protein_score_matches_eager(ubq_pdb, torch_device):
 
     graphed = sfxn.render_whole_pose_scoring_module(pose_stack, cuda_graph=True)
     assert graphed._cuda_forward_graph_uses_fused_execution
+    assert graphed._cuda_forward_graph_uses_weighted_fusion
     graph_coords = pose_stack.coords.detach().clone().requires_grad_(True)
     graph_score = graphed(graph_coords)
     (graph_grad,) = torch.autograd.grad(graph_score.sum(), graph_coords)
@@ -942,10 +982,12 @@ def test_large_cuda_compact_scores_match_block_pair_reference(
     torch.testing.assert_close(whole_score, block_score, rtol=1e-5, atol=1e-2)
     torch.testing.assert_close(whole_grad, block_grad, rtol=2e-3, atol=2e-3)
 
-    # Both the inference graph's side streams and the autograd graph must
-    # preserve the device-resident compact neighbor count.
+    # Compact weighted fusion is profitable inside capture even above the
+    # eager forward threshold. Both graph paths must preserve the
+    # device-resident compact neighbor count.
     whole_scorer.enable_cuda_graphs(whole_coords, mode="both")
-    assert not whole_scorer._cuda_forward_graph_uses_fused_execution
+    assert whole_scorer._cuda_forward_graph_uses_fused_execution
+    assert whole_scorer._cuda_forward_graph_uses_weighted_fusion
     graph_coords = pose.coords.detach().clone().requires_grad_(True)
     graph_score = whole_scorer(graph_coords).sum()
     graph_grad = torch.autograd.grad(graph_score, graph_coords)[0]

@@ -44,9 +44,51 @@ _CUDA_PARALLEL_SCORE_MIN_COORD_ELEMENTS = 20 * 1024
 # gradient scoring serial until the batch is large enough to amortize it.
 _CUDA_PARALLEL_GRAD_SCORE_MIN_COORD_ELEMENTS = 100 * 1024
 _CUDA_GRAPH_FUSED_SCORE_MAX_COORD_ELEMENTS = 40 * 1024
+# Reducing LJ/LK and electrostatics to one weighted lane saves device work for
+# wide CUDA workloads, but the extra native dispatch is slower for small eager
+# calls. These cutoffs retain the established latency path for those calls.
+_CUDA_WEIGHTED_FUSED_MIN_SINGLE_POSE_ATOMS = 15_000
+_CUDA_WEIGHTED_FUSED_MIN_BATCH_ATOMS_PER_POSE = 2_000
+_CUDA_WEIGHTED_FUSED_MIN_GRAD_COORD_ELEMENTS = 64 * 1024
 _CPU_SCORE_TERM_EXECUTORS: dict[int, ThreadPoolExecutor] = {}
 _CPU_SCORE_TERM_EXECUTOR_LOCK = threading.Lock()
 _ScoreCallResult = TypeVar("_ScoreCallResult")
+
+
+def _use_weighted_fused_score(
+    coords: torch.Tensor,
+    *,
+    force_for_cuda_graph: bool = False,
+    needs_gradient: bool | None = None,
+) -> bool:
+    """Select weighted native score reduction without regressing CUDA latency."""
+    setting = os.environ.get("TMOL_FUSED_WEIGHTED_SCORE", "auto")
+    if setting == "0":
+        return False
+    if setting == "1":
+        return True
+    if setting != "auto":
+        raise ValueError(
+            f"TMOL_FUSED_WEIGHTED_SCORE must be 'auto', '0', or '1'; got {setting!r}"
+        )
+    if force_for_cuda_graph:
+        return True
+    if coords.device.type == "cpu":
+        return True
+
+    if needs_gradient is None:
+        needs_gradient = torch.is_grad_enabled() and coords.requires_grad
+    if (
+        needs_gradient
+        and coords.numel() >= _CUDA_WEIGHTED_FUSED_MIN_GRAD_COORD_ELEMENTS
+    ):
+        return True
+
+    n_poses = coords.shape[0]
+    atoms_per_pose = coords.shape[-2]
+    if n_poses == 1:
+        return atoms_per_pose >= _CUDA_WEIGHTED_FUSED_MIN_SINGLE_POSE_ATOMS
+    return atoms_per_pose >= _CUDA_WEIGHTED_FUSED_MIN_BATCH_ATOMS_PER_POSE
 
 
 def _cpu_score_term_executor(n_workers: int) -> ThreadPoolExecutor:
@@ -469,9 +511,14 @@ class ScoreFunction:
         its output buffer; clone an output that must survive the next call.
         """
         self.pre_work_initialization(pose_stack)
-        term_modules = [
-            t.render_whole_pose_scoring_module(pose_stack) for t in self.all_terms()
-        ]
+        term_modules = []
+        for term in self.all_terms():
+            module = term.render_whole_pose_scoring_module(pose_stack)
+            # Retain the score-lane width without evaluating the module.  The
+            # default weighted fused path uses this metadata to map its scalar
+            # contribution back onto the live score-function weight buffer.
+            module.n_score_types = len(term.score_types())
+            term_modules.append(module)
         scoring_module = WholePoseScoringModule(self.weights_tensor(), term_modules)
         if cuda_graph:
             mode = "both" if cuda_graph is True else cuda_graph
@@ -690,29 +737,22 @@ class _FusedLJLKAndElecWholePoseModule(torch.nn.Module):
         self.block_neighbor_cutoff = max(
             ljlk_module.block_neighbor_cutoff, elec_module.block_neighbor_cutoff
         )
+        self.n_score_types = ljlk_module.n_score_types + elec_module.n_score_types
 
     def build_compact_block_neighbors(self, coords, reach):
         return self.ljlk_module.build_compact_block_neighbors(coords, reach)
 
-    def forward(self, coords, shared_block_neighbors=None):
-        if shared_block_neighbors is None:
-            return torch.cat(
-                (self.ljlk_module(coords), self.elec_module(coords)), dim=0
-            )
-        from tmol.score.ljlk.potentials import ljlk_elec_pose_scores
-
+    def _native_arguments(self, coords, shared_block_neighbors):
+        """Collect dtype-adjusted arguments shared by fused native entry points."""
         ljlk = self.ljlk_module
         elec = self.elec_module
-        # Preserve the normal term wrapper's lazy float64 support.  The
-        # composite selects arguments from each child's dtype-adjusted static
-        # tail rather than bypassing it and reading raw float32 parameters.
         ljlk_tail = ljlk._static_tail_for_coords(coords)
         elec_tail = elec._static_tail_for_coords(coords)
         n_common = len(ljlk.common_parameters)
         common = ljlk_tail[:n_common]
         lp = ljlk_tail[n_common:-1]
         ep = elec_tail[len(elec.common_parameters) : -1]
-        (scores,) = ljlk_elec_pose_scores(
+        return (
             coords.flatten(start_dim=0, end_dim=-2),
             *common,
             lp[0],
@@ -730,6 +770,31 @@ class _FusedLJLKAndElecWholePoseModule(torch.nn.Module):
             ep[7],
             ep[9],
             shared_block_neighbors,
+        )
+
+    def forward(self, coords, shared_block_neighbors=None):
+        if shared_block_neighbors is None:
+            return torch.cat(
+                (self.ljlk_module(coords), self.elec_module(coords)), dim=0
+            )
+        from tmol.score.ljlk.potentials import ljlk_elec_pose_scores
+
+        # Preserve the normal term wrapper's lazy float64 support.  The
+        # composite selects arguments from each child's dtype-adjusted static
+        # tail rather than bypassing it and reading raw float32 parameters.
+        (scores,) = ljlk_elec_pose_scores(
+            *self._native_arguments(coords, shared_block_neighbors)
+        )
+        return scores
+
+    def forward_weighted(self, coords, shared_block_neighbors, score_weights):
+        """Return one weighted lane while retaining the decomposed fallback."""
+        from tmol.score.ljlk.potentials import ljlk_elec_weighted_pose_scores
+
+        if score_weights.dtype != coords.dtype:
+            score_weights = score_weights.to(dtype=coords.dtype)
+        (scores,) = ljlk_elec_weighted_pose_scores(
+            *self._native_arguments(coords, shared_block_neighbors), score_weights
         )
         return scores
 
@@ -816,6 +881,20 @@ class WholePoseScoringModule:
             ),
             None,
         )
+        self._fused_ljlk_elec_weight_range = None
+        if self._fused_ljlk_elec_module_index is not None:
+            fused_index = self._fused_ljlk_elec_module_index
+            if all(
+                hasattr(term, "n_score_types")
+                for term in self._execution_modules[: fused_index + 1]
+            ):
+                weight_begin = sum(
+                    term.n_score_types for term in self._execution_modules[:fused_index]
+                )
+                self._fused_ljlk_elec_weight_range = (
+                    weight_begin,
+                    weight_begin + self._execution_modules[fused_index].n_score_types,
+                )
         cpu_threads = torch.get_num_threads() if weights.device.type == "cpu" else 1
         self._cpu_fused_shards = (
             min(8, max(2, cpu_threads // 2))
@@ -861,13 +940,49 @@ class WholePoseScoringModule:
         )
 
     @staticmethod
-    def _call_term(term, coords, shared_block_neighbors):
+    def _call_term(term, coords, shared_block_neighbors, fused_score_weights=None):
+        if fused_score_weights is not None:
+            return term.forward_weighted(
+                coords, shared_block_neighbors, fused_score_weights
+            )
         if (
             shared_block_neighbors is not None
             and getattr(term, "block_neighbor_cutoff", None) is not None
         ):
             return term(coords, shared_block_neighbors)
         return term(coords)
+
+    def _can_use_weighted_fused_default(self, coords: torch.Tensor) -> bool:
+        """Whether default scoring can consume the fused scalar contribution."""
+        if (
+            self._fused_ljlk_elec_weight_range is None
+            or not _use_weighted_fused_score(
+                coords,
+                force_for_cuda_graph=getattr(
+                    self, "_force_weighted_fusion_for_cuda_graph", False
+                ),
+                needs_gradient=torch.is_grad_enabled() and coords.requires_grad,
+            )
+            or os.environ.get("TMOL_SHARED_BLOCK_NEIGHBORS", "compact") == "0"
+        ):
+            return False
+        # The custom CPU parallel autograd wrapper expects canonical term-lane
+        # widths. One-thread CPU and all CUDA execution paths can consume the
+        # compact weighted lane directly.
+        return coords.device.type == "cuda" or self._cpu_term_workers < 2
+
+    def _reduce_weighted_fused_lanes(self, score_lanes: torch.Tensor) -> torch.Tensor:
+        """Combine one already-weighted fused lane in one native reduction."""
+        from tmol.score.ljlk.potentials import weighted_fused_score_sum
+
+        weight_begin, weight_end = self._fused_ljlk_elec_weight_range
+        score_weights = self.weights
+        if score_weights.dtype != score_lanes.dtype:
+            score_weights = score_weights.to(dtype=score_lanes.dtype)
+        (scores,) = weighted_fused_score_sum(
+            score_lanes, score_weights, weight_begin, weight_end - weight_begin
+        )
+        return scores
 
     def __call__(
         self,
@@ -887,13 +1002,26 @@ class WholePoseScoringModule:
                 return self._cuda_graphed_forward(coords)
         if not torch.is_grad_enabled() and coords.requires_grad:
             coords = coords.detach()
-        unweighted = self.unweighted_scores(coords)
+        fused_score_weights = None
+        if sum_terms and apply_weights and self._can_use_weighted_fused_default(coords):
+            weight_begin, weight_end = self._fused_ljlk_elec_weight_range
+            fused_score_weights = self.weights[weight_begin:weight_end, 0]
+        unweighted = self.unweighted_scores(
+            coords, fused_score_weights=fused_score_weights
+        )
+        if fused_score_weights is not None:
+            return self._reduce_weighted_fused_lanes(unweighted)
         weighted = unweighted.mul_(self.weights) if apply_weights else unweighted
         summed = torch.sum(weighted, dim=0) if sum_terms else weighted
 
         return summed
 
-    def unweighted_scores(self, coords: torch.Tensor) -> torch.Tensor:
+    def unweighted_scores(
+        self,
+        coords: torch.Tensor,
+        *,
+        fused_score_weights: torch.Tensor | None = None,
+    ) -> torch.Tensor:
         needs_grad = torch.is_grad_enabled() and coords.requires_grad
         shared_block_neighbors = self._build_shared_block_neighbors(coords)
         execution_modules = (
@@ -923,6 +1051,7 @@ class WholePoseScoringModule:
                 shared_block_neighbors,
                 execution_modules,
                 active_term_indices,
+                fused_score_weights,
             )
             if cuda_scores is not None:
                 return torch.cat(cuda_scores, dim=0)
@@ -948,8 +1077,17 @@ class WholePoseScoringModule:
         if cpu_workers < 2:
             return torch.cat(
                 [
-                    self._call_term(term, coords, shared_block_neighbors)
-                    for term in execution_modules
+                    self._call_term(
+                        term,
+                        coords,
+                        shared_block_neighbors,
+                        (
+                            fused_score_weights
+                            if index == self._fused_ljlk_elec_module_index
+                            else None
+                        ),
+                    )
+                    for index, term in enumerate(execution_modules)
                 ],
                 dim=0,
             )
@@ -1082,6 +1220,7 @@ class WholePoseScoringModule:
         shared_block_neighbors: torch.Tensor | None,
         execution_modules: Sequence[torch.nn.Module],
         active_term_indices: Sequence[int],
+        fused_score_weights: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, ...] | None:
         """Run independent large-workload score terms on separate streams."""
         if self._cuda_term_streams is None or len(self._cuda_term_streams) != len(
@@ -1124,7 +1263,16 @@ class WholePoseScoringModule:
             if term_neighbors is not None:
                 term_neighbors.record_stream(stream)
             with torch.cuda.stream(stream):
-                scores[index] = self._call_term(term, term_input, term_neighbors)
+                scores[index] = self._call_term(
+                    term,
+                    term_input,
+                    term_neighbors,
+                    (
+                        fused_score_weights
+                        if index == self._fused_ljlk_elec_module_index
+                        else None
+                    ),
+                )
 
         for stream, index in zip(self._cuda_term_streams, active_term_indices):
             current.wait_stream(stream)
@@ -1163,10 +1311,16 @@ class WholePoseScoringModule:
             # inference workloads retain independent term-stream overlap.
             capture_module = self
             graph_fusion_mode = os.environ.get("TMOL_FUSED_CUDA_GRAPH_FORWARD", "auto")
+            weighted_graph_enabled = (
+                self._fused_ljlk_elec_module_index is not None
+                and os.environ.get("TMOL_SHARED_BLOCK_NEIGHBORS", "compact") != "0"
+                and _use_weighted_fused_score(example_coords, force_for_cuda_graph=True)
+            )
             use_separate_terms = self._fused_ljlk_elec_module_index is not None and (
                 graph_fusion_mode == "0"
                 or (
                     graph_fusion_mode == "auto"
+                    and not weighted_graph_enabled
                     and example_coords.numel()
                     > _CUDA_GRAPH_FUSED_SCORE_MAX_COORD_ELEMENTS
                 )
@@ -1184,18 +1338,29 @@ class WholePoseScoringModule:
                     for index, term in enumerate(capture_module._execution_modules)
                     if not isinstance(term, ZeroTermPoseScoringModule)
                 )
+                capture_module._fused_ljlk_elec_module_index = None
+                capture_module._fused_ljlk_elec_weight_range = None
                 capture_module._cuda_term_streams = None
                 self._cuda_forward_capture_module = capture_module
             self._cuda_forward_graph_uses_fused_execution = not use_separate_terms
-            self._cuda_graphed_forward = _InferenceCUDAGraph(
-                capture_module, example_coords
+            self._cuda_forward_graph_uses_weighted_fusion = (
+                weighted_graph_enabled and not use_separate_terms
             )
+            capture_module._force_weighted_fusion_for_cuda_graph = True
+            try:
+                self._cuda_graphed_forward = _InferenceCUDAGraph(
+                    capture_module, example_coords
+                )
+            finally:
+                del capture_module._force_weighted_fusion_for_cuda_graph
 
         if mode in ("forward_backward", "both") and not hasattr(
             self, "_cuda_graphed_autograd"
         ):
             graph_module = _DefaultWholePoseScoringModule(
-                self.weights, self._execution_modules
+                self.weights,
+                self._execution_modules,
+                force_weighted_fusion_for_cuda_graph=True,
             )
             sample = example_coords.detach().clone().requires_grad_(True)
             with (
@@ -1219,10 +1384,15 @@ class WholePoseScoringModule:
 class _DefaultWholePoseScoringModule(torch.nn.Module):
     """Graph-capturable default reduction for a whole-pose scorer."""
 
-    def __init__(self, weights, term_modules):
+    def __init__(
+        self, weights, term_modules, *, force_weighted_fusion_for_cuda_graph=False
+    ):
         super().__init__()
         self.weights = weights
         self.term_modules = torch.nn.ModuleList(term_modules)
+        self._force_weighted_fusion_for_cuda_graph = (
+            force_weighted_fusion_for_cuda_graph
+        )
         self._shared_neighbor_terms = tuple(
             term
             for term in self.term_modules
@@ -1232,6 +1402,25 @@ class _DefaultWholePoseScoringModule(torch.nn.Module):
             (term.block_neighbor_cutoff for term in self._shared_neighbor_terms),
             default=None,
         )
+        self._fused_module_index = next(
+            (
+                index
+                for index, term in enumerate(self.term_modules)
+                if isinstance(term, _FusedLJLKAndElecWholePoseModule)
+            ),
+            None,
+        )
+        self._fused_weight_range = None
+        if self._fused_module_index is not None:
+            weight_begin = sum(
+                term.n_score_types
+                for term in self.term_modules[: self._fused_module_index]
+            )
+            self._fused_weight_range = (
+                weight_begin,
+                weight_begin
+                + self.term_modules[self._fused_module_index].n_score_types,
+            )
 
     def forward(self, coords):
         shared_block_neighbors = None
@@ -1243,14 +1432,46 @@ class _DefaultWholePoseScoringModule(torch.nn.Module):
             shared_block_neighbors = builder.build_compact_block_neighbors(
                 coords, self._shared_neighbor_cutoff
             )
-        unweighted = torch.cat(
+        use_weighted_fusion = (
+            self._fused_weight_range is not None
+            and shared_block_neighbors is not None
+            and _use_weighted_fused_score(
+                coords,
+                force_for_cuda_graph=self._force_weighted_fusion_for_cuda_graph,
+            )
+        )
+        score_lanes = torch.cat(
             [
-                WholePoseScoringModule._call_term(term, coords, shared_block_neighbors)
-                for term in self.term_modules
+                WholePoseScoringModule._call_term(
+                    term,
+                    coords,
+                    shared_block_neighbors,
+                    (
+                        self.weights[
+                            self._fused_weight_range[0] : self._fused_weight_range[1],
+                            0,
+                        ]
+                        if use_weighted_fusion and index == self._fused_module_index
+                        else None
+                    ),
+                )
+                for index, term in enumerate(self.term_modules)
             ],
             dim=0,
         )
-        return torch.sum(self.weights * unweighted, dim=0)
+        if not use_weighted_fusion:
+            return torch.sum(self.weights * score_lanes, dim=0)
+
+        from tmol.score.ljlk.potentials import weighted_fused_score_sum
+
+        weight_begin, weight_end = self._fused_weight_range
+        score_weights = self.weights
+        if score_weights.dtype != score_lanes.dtype:
+            score_weights = score_weights.to(dtype=score_lanes.dtype)
+        (scores,) = weighted_fused_score_sum(
+            score_lanes, score_weights, weight_begin, weight_end - weight_begin
+        )
+        return scores
 
 
 class _InferenceCUDAGraph:
