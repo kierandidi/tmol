@@ -68,6 +68,7 @@ struct CartBondedPoseScoreDispatch {
       // relative to the offset listed in cart_subgraph_offsets, where
       // do the subgraphs for each of the three types begin?
       TView<Vec<Int, 3>, 1, D> cart_subgraph_type_offsets,
+      TView<Int, 1, D> cart_subgraph_param_indices,
 
       // int max_subgraphs_per_block,
       bool output_block_pair_energies,
@@ -118,6 +119,7 @@ struct CartBondedPoseScoreDispatch {
       // relative to the offset listed in cart_subgraph_offsets, where
       // do the subgraphs for each of the three types begin?
       TView<Vec<Int, 3>, 1, D> cart_subgraph_type_offsets,
+      TView<Int, 1, D> cart_subgraph_param_indices,
 
       TView<Real, 4, D> dTdV  // nterms x n-dispatch
       ) -> TPack<Vec<Real, 3>, 2, D>;
@@ -167,6 +169,7 @@ struct CartBondedRotamerScoreDispatch {
       // relative to the offset listed in cart_subgraph_offsets, where
       // do the subgraphs for each of the three types begin?
       TView<Vec<Int, 3>, 1, D> cart_subgraph_type_offsets,
+      TView<Int, 1, D> cart_subgraph_param_indices,
 
       // int max_subgraphs_per_block,
       bool output_block_pair_energies,
@@ -220,6 +223,7 @@ struct CartBondedRotamerScoreDispatch {
       // relative to the offset listed in cart_subgraph_offsets, where
       // do the subgraphs for each of the three types begin?
       TView<Vec<Int, 3>, 1, D> cart_subgraph_type_offsets,
+      TView<Int, 1, D> cart_subgraph_param_indices,
 
       TView<Int, 2, D> dispatch_indices,
       TView<Int, 1, D> n_output_intxns_for_rot_conn_offset,
