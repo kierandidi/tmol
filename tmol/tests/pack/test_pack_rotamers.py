@@ -237,6 +237,44 @@ def test_pack_rotamers(
     )
 
 
+def test_shared_rotamer_dispatch_matches_independent_lk_ball_layout(
+    default_database, ubq_pdb, dun_sampler, torch_device
+):
+    pose = pose_stack_from_pdb(ubq_pdb, torch_device, residue_start=0, residue_end=10)
+    pose_stack, task = setup_pose_stack_and_task([pose], torch_device, dun_sampler)
+    task = SetPackerTask.from_packer_task(task)
+    sfxn = get_packer_sfxn(default_database, torch_device)
+    pose_stack, rotamer_set = build_rotamers(
+        pose_stack, task, pose_stack.packed_block_types.chem_db
+    )
+    scorer = sfxn.render_rotamer_scoring_module(pose_stack, rotamer_set)
+
+    shared_coords = rotamer_set.coords.detach().clone().requires_grad_(True)
+    shared = scorer(shared_coords).coalesce()
+    (shared_grad,) = torch.autograd.grad(shared.values().sum(), shared_coords)
+
+    lk_ball = next(term for term in scorer.term_modules if term.classname == "LKBall")
+    lk_ball.block_neighbor_cutoff += 0.5
+    fallback_coords = rotamer_set.coords.detach().clone().requires_grad_(True)
+    fallback = scorer(fallback_coords).coalesce()
+    (fallback_grad,) = torch.autograd.grad(fallback.values().sum(), fallback_coords)
+
+    torch.testing.assert_close(shared.to_dense(), fallback.to_dense())
+    if torch_device.type == "cuda":
+        # Rotamer gradients use atomics, so even two independent evaluations
+        # need not be elementwise deterministic. Require the shared-layout
+        # error to remain inside the measured independent-repeat envelope.
+        repeat_coords = rotamer_set.coords.detach().clone().requires_grad_(True)
+        repeat = scorer(repeat_coords).coalesce()
+        (repeat_grad,) = torch.autograd.grad(repeat.values().sum(), repeat_coords)
+        torch.testing.assert_close(fallback.to_dense(), repeat.to_dense())
+        repeat_error = torch.max(torch.abs(fallback_grad - repeat_grad))
+        shared_error = torch.max(torch.abs(shared_grad - fallback_grad))
+        assert shared_error <= 2 * repeat_error + 1e-6
+    else:
+        torch.testing.assert_close(shared_grad, fallback_grad)
+
+
 def test_pack_rotamers_optH(default_database, ubq_pdb, torch_device):
     n_poses = 4
     p = pose_stack_from_pdb(ubq_pdb, torch_device, residue_start=0, residue_end=76)

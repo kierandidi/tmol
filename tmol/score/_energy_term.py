@@ -48,6 +48,14 @@ class EnergyTerm:
         """
         raise NotImplementedError()
 
+    def accepts_shared_rotamer_dispatch(self):
+        """Whether this term accepts a compatible rotamer-pair index list."""
+        return False
+
+    def rotamer_dispatch_key(self):
+        """Compatibility key for reusable rotamer-pair dispatch layouts."""
+        return None
+
     def setup_block_type(self, block_type: RefinedResidueType):
         """Make a one-time CPU annotation on a block type.
 
@@ -197,4 +205,7 @@ class EnergyTerm:
             rotamer_set,
             self.get_rotamer_score_term_attributes(pose_stack, rotamer_set),
             f,
+            self.get_block_neighbor_cutoff(),
+            self.accepts_shared_rotamer_dispatch(),
+            self.rotamer_dispatch_key(),
         )

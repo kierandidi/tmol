@@ -241,7 +241,8 @@ struct LKBallRotamerScoreDispatch {
       TView<LKBallGlobalParams<Real>, 1, Dev> global_params,
       Real max_dis,
       TView<Vec<Real, 3>, 2, Dev> water_coords,
-      bool output_block_pair_energies)
+      bool output_block_pair_energies,
+      TPack<Int, 2, Dev> shared_dispatch_indices)
       -> std::tuple<TPack<Real, 2, Dev>, TPack<Int, 2, Dev>>;
 
   static auto backward(

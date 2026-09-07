@@ -720,6 +720,51 @@ def test_cpu_rotamer_scorer_coalesces_subset_layouts(
     torch.testing.assert_close(coords.grad, torch.tensor(24.0))
 
 
+def test_rotamer_scorer_reuses_only_exact_cutoff_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        score_function_module, "_cpu_score_term_worker_count", lambda *_: 1
+    )
+    indices = torch.tensor([[0], [0], [0]], dtype=torch.int32)
+
+    class Producer(torch.nn.Module):
+        n_poses = 1
+        n_rots = 1
+        block_neighbor_cutoff = 5.5
+        rotamer_dispatch_key = "sphere_overlap"
+
+        def forward(self, coords):
+            return coords.reshape(1, 1), indices
+
+    class Consumer(torch.nn.Module):
+        n_poses = 1
+        n_rots = 1
+        accepts_shared_dispatch = True
+        rotamer_dispatch_key = "sphere_overlap"
+
+        def __init__(self, cutoff):
+            super().__init__()
+            self.block_neighbor_cutoff = cutoff
+            self.received = None
+
+        def forward(self, coords, shared_dispatch=None):
+            self.received = shared_dispatch
+            return coords.reshape(1, 1), (
+                indices.clone() if shared_dispatch is None else shared_dispatch
+            )
+
+    matching = Consumer(5.5)
+    changed = Consumer(6.0)
+    scorer = RotamerScoringModule(torch.ones(3), [Producer(), matching, changed])
+
+    scores = scorer(torch.ones(()))
+
+    assert matching.received is indices
+    assert changed.received is None
+    torch.testing.assert_close(scores.to_dense(), torch.tensor([[[3.0]]]))
+
+
 def test_cpu_rotamer_terms_run_concurrently(monkeypatch: pytest.MonkeyPatch) -> None:
     barrier = threading.Barrier(2, timeout=2)
 

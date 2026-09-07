@@ -1491,7 +1491,30 @@ class RotamerScoringModule:
             ]
             term_results = [future.result() for future in futures]
         else:
-            term_results = [term.forward(coords) for term in self.term_modules]
+            # Neighbor-sphere dispatch is determined only by the rotamer set
+            # and cutoff. Reuse an earlier exact-cutoff layout when a term
+            # explicitly supports it; changed cutoffs and independently
+            # enabled terms naturally retain the ordinary path.
+            dispatch_by_compatibility = {}
+            term_results = []
+            for term in self.term_modules:
+                cutoff = getattr(term, "block_neighbor_cutoff", None)
+                dispatch_key = getattr(term, "rotamer_dispatch_key", None)
+                compatibility = (dispatch_key, cutoff)
+                accepts_shared = getattr(term, "accepts_shared_dispatch", False)
+                if accepts_shared:
+                    result = term.forward(
+                        coords, dispatch_by_compatibility.get(compatibility)
+                    )
+                else:
+                    result = term.forward(coords)
+                term_results.append(result)
+                if (
+                    dispatch_key is not None
+                    and cutoff is not None
+                    and compatibility not in dispatch_by_compatibility
+                ):
+                    dispatch_by_compatibility[compatibility] = result[1]
 
         for term, (scores, indices) in zip(self.term_modules, term_results):
             # [n_subterms, nnz], [3, nnz]
@@ -1513,7 +1536,10 @@ class RotamerScoringModule:
                 layouts_by_nnz.get(indices.shape[1], ()) if deduplicate_layout else ()
             )
             for layout_index in candidate_layouts:
-                if torch.equal(indices, all_indices[layout_index]):
+                prior_indices = all_indices[layout_index]
+                if indices.data_ptr() == prior_indices.data_ptr() or torch.equal(
+                    indices, prior_indices
+                ):
                     all_values[layout_index] = (
                         all_values[layout_index] + weighted_values
                     )

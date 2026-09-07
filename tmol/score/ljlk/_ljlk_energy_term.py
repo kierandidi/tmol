@@ -129,6 +129,9 @@ class LJLKEnergyTerm(AtomTypeDependentTerm, BondDependentTerm):
     def get_block_neighbor_cutoff(self):
         return self._max_dis
 
+    def rotamer_dispatch_key(self):
+        return "sphere_overlap"
+
     def get_score_term_attributes(self, pose_stack):
         def _t(ts):
             return tuple(map(lambda t: t.to(torch.float), ts))

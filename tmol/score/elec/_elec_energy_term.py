@@ -166,6 +166,9 @@ class ElecEnergyTerm(AtomTypeDependentTerm, BondDependentTerm):
     def get_block_neighbor_cutoff(self):
         return self._max_dis
 
+    def rotamer_dispatch_key(self):
+        return "sphere_overlap"
+
     def get_score_term_attributes(self, pose_stack):
         if self._scoring_global_params is None:
             D = self.global_params.elec_sigmoidal_die_D

@@ -308,13 +308,14 @@ class LKBallEnergyTerm(AtomTypeDependentTerm, HBondDependentTerm):
 
     def rotamer_score_lk_ball(self, *args):
         from tmol.score.lk_ball.potentials import (
-            lk_ball_rotamer_score,
+            lk_ball_rotamer_score_shared,
             gen_pose_waters,
         )
 
-        common_args = args[:-2]
-        pose_stack = args[-2]
-        block_pair_scoring = args[-1]
+        common_args = args[:-3]
+        pose_stack = args[-3]
+        shared_dispatch_indices = args[-1]
+        block_pair_scoring = args[-2]
 
         args = [
             *common_args,
@@ -366,7 +367,7 @@ class LKBallEnergyTerm(AtomTypeDependentTerm, HBondDependentTerm):
         if common_args[0].dtype == torch.float64:
             convert_float64(args)
 
-        return lk_ball_rotamer_score(*args)
+        return lk_ball_rotamer_score_shared(*args, shared_dispatch_indices)
 
     def get_pose_score_term_function(self):
         return self.pose_score_lk_ball
@@ -376,6 +377,12 @@ class LKBallEnergyTerm(AtomTypeDependentTerm, HBondDependentTerm):
 
     def get_block_neighbor_cutoff(self):
         return self._max_dis
+
+    def accepts_shared_rotamer_dispatch(self):
+        return True
+
+    def rotamer_dispatch_key(self):
+        return "sphere_overlap"
 
     def get_score_term_attributes(self, pose_stack):
         return [pose_stack]

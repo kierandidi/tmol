@@ -240,6 +240,9 @@ class TermRotamerScoringModule(TermScoringModule):
         rotamer_set,
         term_parameters,
         term_score_poses,
+        block_neighbor_cutoff=None,
+        accepts_shared_dispatch=False,
+        rotamer_dispatch_key=None,
     ):
         super(TermRotamerScoringModule, self).__init__(
             classname, term_parameters, term_score_poses
@@ -274,9 +277,16 @@ class TermRotamerScoringModule(TermScoringModule):
         )
         self.n_poses = rotamer_set.n_rots_for_pose.shape[0]
         self.n_rots = rotamer_set.coord_offset_for_rot.shape[0]
+        self.block_neighbor_cutoff = block_neighbor_cutoff
+        self.accepts_shared_dispatch = accepts_shared_dispatch
+        self.rotamer_dispatch_key = rotamer_dispatch_key
+        self.register_buffer(
+            "_empty_dispatch_indices",
+            torch.empty((0, 0), dtype=torch.int32, device=rotamer_set.coords.device),
+        )
         self._build_static_tails(True)
 
-    def forward(self, coords):
+    def forward(self, coords, shared_dispatch_indices=None):
         """Return (scores, indices) without creating any sparse tensor.
 
         scores:  [n_subterms, nnz] float32
@@ -284,7 +294,14 @@ class TermRotamerScoringModule(TermScoringModule):
         """
         flat = coords.flatten(start_dim=0, end_dim=-2)
         tail = self._static_tail_for_coords(coords)
-        scores, indices = self.term_score_poses(flat, *tail)
+        if self.accepts_shared_dispatch:
+            if shared_dispatch_indices is None:
+                shared_dispatch_indices = self._empty_dispatch_indices
+            scores, indices = self.term_score_poses(
+                flat, *tail, shared_dispatch_indices
+            )
+        else:
+            scores, indices = self.term_score_poses(flat, *tail)
         return scores, indices
 
     def forward_split(self, coords):
