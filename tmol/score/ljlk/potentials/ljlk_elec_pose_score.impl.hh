@@ -112,6 +112,9 @@ TMOL_DEVICE_FUNC std::array<Real, 4> score_atom_pair(
     int ljlk_separation,
     int elec_separation,
     TView<Eigen::Matrix<Real, 3, 1>, 2, D> dV_dcoords) {
+  if (ljlk_separation < 4 && elec_separation < 4) {
+    return {0, 0, 0, 0};
+  }
   using Real3 = Eigen::Matrix<Real, 3, 1>;
   Real3 const coord1 = coord_from_shared(data.r1.coords, atom1);
   Real3 const coord2 = coord_from_shared(data.r2.coords, atom2);
