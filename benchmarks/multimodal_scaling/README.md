@@ -11,8 +11,8 @@ PyRosetta 2024.39 CPU, TMol CPU, and TMol H200 CUDA batches 1, 10, 100, and
 1000. TMol 0.1.55 is compared with 0.1.46; nucleic-acid historical results use
 0.1.47 because 0.1.46 cannot represent that modality.
 
-The final deliverables are exactly two composite figures (each emitted as PDF,
-SVG, and PNG):
+The primary workload deliverables are two composite figures (each emitted as
+PDF, SVG, and PNG):
 
 - `figures/multimodal-workloads-speed.*`
 - `figures/multimodal-workloads-memory.*`
@@ -20,6 +20,18 @@ SVG, and PNG):
 Each figure has modality in columns and workflow in rows. Color identifies the
 engine/device/batch series; solid and dashed lines distinguish current and
 historical TMol.
+
+Two derived comparison composites use the same frozen measurements:
+
+- `figures/tmol-old-to-new-speedup.*` pairs identical structures and shows the
+  historical/current runtime ratio by workload, modality, residue length, and
+  CPU/GPU batch; faint points are individual pairs and curves summarize
+  log-length bins.
+- `figures/pyrosetta-tmol-score-term-equivalence.*` compares weighted score
+  terms after applying the explicit grouped term crosswalk in
+  `src/collect_results.py`. It reports across-structure rank correlation and a
+  bounded symmetric magnitude difference for every supported term and
+  modality. The underlying derived tables are retained in `results/summary/`.
 
 ## Measurement contract
 

@@ -174,9 +174,11 @@ def main() -> None:
     if summary_rows:
         write_rows(ROOT / "results/summary/timing_summary.csv", summary_rows)
 
-    # Pair score-only, batch-one CPU term reports for each tmol version with the
-    # single PyRosetta reference. Aggregations reflect how Rosetta splits terms
-    # that tmol evaluates together.
+    # Pair score-gradient, batch-one CPU term reports for each tmol version with
+    # the single PyRosetta reference. The score-term decomposition is evaluated
+    # on the same starting coordinates before the gradient timing, so these are
+    # also the appropriate records for energy agreement. Aggregations reflect
+    # how Rosetta splits terms that tmol evaluates together.
     pyrosetta = {
         (r["modality"], r["dataset_id"], r["protocol"]): r
         for r in results
@@ -187,14 +189,14 @@ def main() -> None:
     for result in results:
         if not (
             result["engine"] == "tmol"
-            and result["protocol"] == "score"
+            and result["protocol"] == "score_gradient"
             and result["device"] == "cpu"
             and result["batch_size"] == 1
             and result["status"] == "ok"
         ):
             continue
         reference = pyrosetta.get(
-            (result["modality"], result["dataset_id"], "score")
+            (result["modality"], result["dataset_id"], "score_gradient")
         )
         if reference is None:
             continue
