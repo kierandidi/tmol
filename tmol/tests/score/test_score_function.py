@@ -17,6 +17,7 @@ from tmol.score._score_function import (
 )
 from tmol.score.common import ZeroTermPoseScoringModule
 from tmol.score.common._scoring_module import _coordinate_independent_score
+from tmol.score.ljlk.potentials import build_compact_block_neighbors
 from tmol.pose import (
     DEFAULT_ATOM_B_FACTOR,
     DEFAULT_ATOM_OCCUPANCY,
@@ -46,6 +47,279 @@ def test_pose_score_smoke(ubq_pdb, default_database, torch_device):
     scores = scorer(pose_stack100.coords)
 
     assert scores is not None
+
+
+def test_shared_block_neighbors_preserve_scores_and_gradients(
+    ubq_pdb, torch_device, monkeypatch
+):
+    pose = pose_stack_from_pdb(ubq_pdb, torch_device)
+    sfxn = beta2016_score_function(torch_device)
+    scorer = sfxn.render_whole_pose_scoring_module(pose)
+
+    monkeypatch.setenv("TMOL_SHARED_BLOCK_NEIGHBORS", "0")
+    legacy_coords = pose.coords.detach().clone().requires_grad_(True)
+    legacy_scores = scorer.unweighted_scores(legacy_coords)
+    (legacy_grad,) = torch.autograd.grad(legacy_scores.sum(), legacy_coords)
+
+    monkeypatch.setenv("TMOL_SHARED_BLOCK_NEIGHBORS", "compact")
+    shared_coords = pose.coords.detach().clone().requires_grad_(True)
+    shared_neighbors = scorer._build_shared_block_neighbors(shared_coords)
+    assert shared_neighbors is not None
+    assert shared_neighbors.dtype == torch.int32
+    assert shared_neighbors.ndim == 1
+    assert 0 <= int(shared_neighbors[0]) < shared_neighbors.numel()
+    shared_scores = scorer.unweighted_scores(shared_coords)
+    (shared_grad,) = torch.autograd.grad(shared_scores.sum(), shared_coords)
+
+    torch.testing.assert_close(shared_scores, legacy_scores, atol=1e-5, rtol=1e-5)
+    torch.testing.assert_close(shared_grad, legacy_grad, atol=1e-5, rtol=1e-5)
+
+
+def test_shared_block_neighbors_follow_active_terms(
+    ubq_pdb, default_database, torch_device, monkeypatch
+):
+    monkeypatch.setenv("TMOL_FUSED_LJLK_ELEC", "1")
+    pose = pose_stack_from_pdb(ubq_pdb, torch_device, residue_end=4)
+    sfxn = ScoreFunction(default_database, torch_device)
+    sfxn.set_weight(ScoreType.fa_ljatr, 1.0)
+
+    one_pair_term = sfxn.render_whole_pose_scoring_module(pose)
+    assert len(one_pair_term._shared_neighbor_term_indices) == 1
+    assert one_pair_term._build_shared_block_neighbors(pose.coords) is None
+    assert all(
+        term.classname != "LJLK+Elec" for term in one_pair_term._execution_modules
+    )
+
+    sfxn.set_weight(ScoreType.fa_elec, 1.0)
+    two_pair_terms = sfxn.render_whole_pose_scoring_module(pose)
+    assert len(two_pair_terms._shared_neighbor_term_indices) == 2
+    assert two_pair_terms._build_shared_block_neighbors(pose.coords) is not None
+    assert two_pair_terms._execution_modules[0].classname == "LJLK+Elec"
+
+    sfxn.set_weight(ScoreType.fa_elec, 0.0)
+    one_pair_term_again = sfxn.render_whole_pose_scoring_module(pose)
+    assert len(one_pair_term_again._shared_neighbor_term_indices) == 1
+    assert one_pair_term_again._build_shared_block_neighbors(pose.coords) is None
+    assert all(
+        term.classname != "LJLK+Elec" for term in one_pair_term_again._execution_modules
+    )
+
+
+def test_fused_ljlk_elec_preserves_term_lanes_weights_and_gradients(
+    ubq_pdb, torch_device, monkeypatch
+):
+    pose = pose_stack_from_pdb(ubq_pdb, torch_device, residue_end=4)
+
+    monkeypatch.setenv("TMOL_FUSED_LJLK_ELEC", "0")
+    separate = beta2016_score_function(torch_device).render_whole_pose_scoring_module(
+        pose
+    )
+    monkeypatch.setenv("TMOL_FUSED_LJLK_ELEC", "1")
+    fused = beta2016_score_function(torch_device).render_whole_pose_scoring_module(pose)
+
+    assert [term.classname for term in fused.term_modules][:2] == ["LJLK", "Elec"]
+    assert fused._execution_modules[0].classname == "LJLK+Elec"
+
+    separate_coords = pose.coords.detach().clone().requires_grad_(True)
+    fused_coords = pose.coords.detach().clone().requires_grad_(True)
+    separate_lanes = separate(separate_coords, sum_terms=False, apply_weights=False)
+    fused_lanes = fused(fused_coords, sum_terms=False, apply_weights=False)
+    torch.testing.assert_close(fused_lanes, separate_lanes, atol=2e-5, rtol=2e-5)
+
+    (separate_gradient,) = torch.autograd.grad(separate_lanes.sum(), separate_coords)
+    (fused_gradient,) = torch.autograd.grad(fused_lanes.sum(), fused_coords)
+    torch.testing.assert_close(fused_gradient, separate_gradient, atol=3e-5, rtol=3e-5)
+
+    # Runtime weight edits remain independent because fusion emits the same
+    # canonical score lanes. In particular, electrostatics can be disabled
+    # without changing the execution object's public representation.
+    with torch.no_grad():
+        fused.weights[ScoreType.fa_ljatr.value] = 0.25
+        fused.weights[ScoreType.fa_ljrep.value] = -0.5
+        fused.weights[ScoreType.fa_lk.value] = 1.25
+        fused.weights[ScoreType.fa_elec.value] = 0.0
+    weighted_lanes = fused(pose.coords, sum_terms=False, apply_weights=True)
+    torch.testing.assert_close(weighted_lanes, fused_lanes.detach() * fused.weights)
+    torch.testing.assert_close(fused(pose.coords), weighted_lanes.sum(dim=0))
+
+
+def test_fused_ljlk_elec_weighted_gradient_finite_difference(
+    ubq_pdb, default_database, torch_device, monkeypatch
+):
+    if torch_device.type != "cpu":
+        pytest.skip("CPU double-precision finite-difference check")
+    monkeypatch.setenv("TMOL_FUSED_LJLK_ELEC", "1")
+    pose = pose_stack_from_pdb(ubq_pdb, torch_device, residue_end=2)
+    sfxn = ScoreFunction(default_database, torch_device)
+    for score_type, weight in (
+        (ScoreType.fa_ljatr, 0.7),
+        (ScoreType.fa_ljrep, -0.3),
+        (ScoreType.fa_lk, 1.1),
+        (ScoreType.fa_elec, 0.4),
+    ):
+        sfxn.set_weight(score_type, weight)
+    scorer = sfxn.render_whole_pose_scoring_module(pose)
+    assert scorer._execution_modules[0].classname == "LJLK+Elec"
+
+    coords = pose.coords.double().requires_grad_(True)
+    torch.autograd.gradcheck(
+        lambda x: scorer(x).sum(),
+        (coords,),
+        eps=1e-6,
+        atol=2e-5,
+        rtol=2e-3,
+    )
+
+
+def test_fused_ljlk_elec_backward_respects_lane_and_pose_weights(
+    ubq_pdb, default_database, torch_device, monkeypatch
+):
+    pose = pose_stack_from_pdb(ubq_pdb, torch_device, residue_end=4)
+    pose_batch = PoseStackBuilder.from_poses([pose, pose], torch_device)
+
+    monkeypatch.setenv("TMOL_FUSED_LJLK_ELEC", "0")
+    separate = beta2016_score_function(
+        torch_device, param_db=default_database
+    ).render_whole_pose_scoring_module(pose_batch)
+    monkeypatch.setenv("TMOL_FUSED_LJLK_ELEC", "1")
+    fused = beta2016_score_function(
+        torch_device, param_db=default_database
+    ).render_whole_pose_scoring_module(pose_batch)
+    assert fused._execution_modules[0].classname == "LJLK+Elec"
+
+    separate_coords = pose_batch.coords.detach().clone().requires_grad_(True)
+    fused_coords = pose_batch.coords.detach().clone().requires_grad_(True)
+    separate_lanes = separate(separate_coords, sum_terms=False, apply_weights=False)
+    fused_lanes = fused(fused_coords, sum_terms=False, apply_weights=False)
+    upstream = torch.linspace(
+        -1.25,
+        1.75,
+        separate_lanes.numel(),
+        device=torch_device,
+        dtype=separate_lanes.dtype,
+    ).reshape_as(separate_lanes)
+    (separate_gradient,) = torch.autograd.grad(
+        (separate_lanes * upstream).sum(), separate_coords
+    )
+    (fused_gradient,) = torch.autograd.grad(
+        (fused_lanes * upstream).sum(), fused_coords
+    )
+
+    torch.testing.assert_close(fused_lanes, separate_lanes, atol=2e-4, rtol=3e-5)
+    torch.testing.assert_close(fused_gradient, separate_gradient, atol=5e-5, rtol=5e-5)
+
+
+def test_cpu_fused_shard_planner_preserves_fallbacks(
+    ubq_pdb, default_database, torch_device, monkeypatch
+):
+    if torch_device.type != "cpu":
+        pytest.skip("CPU execution-planner check")
+    pose = pose_stack_from_pdb(ubq_pdb, torch_device, residue_end=4)
+    monkeypatch.setenv("TMOL_FUSED_LJLK_ELEC", "auto")
+    monkeypatch.setenv("TMOL_FUSED_CPU_SHARDS", "auto")
+    monkeypatch.setattr(torch, "get_num_threads", lambda: 4)
+    fused = beta2016_score_function(
+        torch_device, param_db=default_database
+    ).render_whole_pose_scoring_module(pose)
+    assert fused._execution_modules[0].classname == "LJLK+Elec"
+    assert fused._cpu_fused_shards == 2
+
+    monkeypatch.setenv("TMOL_FUSED_LJLK_ELEC", "0")
+    separate = beta2016_score_function(
+        torch_device, param_db=default_database
+    ).render_whole_pose_scoring_module(pose)
+    separate_coords = pose.coords.detach().clone().requires_grad_(True)
+    fused_coords = pose.coords.detach().clone().requires_grad_(True)
+    separate_score = separate(separate_coords)
+    fused_score = fused(fused_coords)
+    (separate_grad,) = torch.autograd.grad(separate_score.sum(), separate_coords)
+    (fused_grad,) = torch.autograd.grad(fused_score.sum(), fused_coords)
+    torch.testing.assert_close(fused_score, separate_score, atol=2e-3, rtol=3e-5)
+    torch.testing.assert_close(fused_grad, separate_grad, atol=5e-5, rtol=5e-5)
+
+    monkeypatch.setenv("TMOL_FUSED_LJLK_ELEC", "auto")
+    monkeypatch.setenv("TMOL_FUSED_CPU_SHARDS", "0")
+    no_shards = beta2016_score_function(
+        torch_device, param_db=default_database
+    ).render_whole_pose_scoring_module(pose)
+    assert all(term.classname != "LJLK+Elec" for term in no_shards._execution_modules)
+
+    monkeypatch.setenv("TMOL_FUSED_CPU_SHARDS", "auto")
+    monkeypatch.setattr(torch, "get_num_threads", lambda: 2)
+    two_threads = beta2016_score_function(
+        torch_device, param_db=default_database
+    ).render_whole_pose_scoring_module(pose)
+    assert two_threads._execution_modules[0].classname == "LJLK+Elec"
+    assert two_threads._cpu_fused_shards == 2
+
+    monkeypatch.setattr(torch, "get_num_threads", lambda: 4)
+    pose_batch = PoseStackBuilder.from_poses([pose, pose], torch_device)
+    batched = beta2016_score_function(
+        torch_device, param_db=default_database
+    ).render_whole_pose_scoring_module(pose_batch)
+    assert all(term.classname != "LJLK+Elec" for term in batched._execution_modules)
+
+
+@pytest.mark.parametrize(
+    "shape, message",
+    [
+        ((1, 65_536), "at most 65,535 blocks"),
+        ((2, 46_341), "exceeds int32 capacity"),
+    ],
+)
+def test_compact_block_neighbor_capacity_checks(shape, message):
+    empty_float = torch.empty((0, 3), dtype=torch.float32)
+    empty_int = torch.empty((0,), dtype=torch.int32)
+    first_rot_block_type = torch.empty(shape, dtype=torch.int32)
+
+    with pytest.raises(RuntimeError, match=message):
+        build_compact_block_neighbors(
+            empty_float,
+            empty_int,
+            first_rot_block_type,
+            empty_int,
+            empty_int,
+            empty_int,
+            empty_int,
+            6.0,
+        )
+
+
+def test_large_cpu_compact_neighbor_build_is_parallel_and_deterministic(
+    systems_bysize, default_database, torch_device, monkeypatch
+):
+    if torch_device.type != "cpu":
+        pytest.skip("CPU compact-list determinism check")
+    pose = pose_stack_from_pdb(systems_bysize[300], torch_device)
+    scorer = beta2016_score_function(
+        torch_device, param_db=default_database
+    ).render_whole_pose_scoring_module(pose)
+    original_threads = torch.get_num_threads()
+    try:
+        torch.set_num_threads(1)
+        monkeypatch.setenv("TMOL_CPU_SPATIAL_BLOCK_NEIGHBORS", "0")
+        quadratic = scorer._build_shared_block_neighbors(pose.coords)
+        monkeypatch.setenv("TMOL_CPU_SPATIAL_BLOCK_NEIGHBORS", "1")
+        serial = scorer._build_shared_block_neighbors(pose.coords)
+        torch.set_num_threads(4)
+        parallel_first = scorer._build_shared_block_neighbors(pose.coords)
+        parallel_second = scorer._build_shared_block_neighbors(pose.coords)
+    finally:
+        torch.set_num_threads(original_threads)
+
+    assert serial is not None
+    assert quadratic is not None
+    n_neighbors = int(serial[0])
+    assert serial.numel() == n_neighbors + 1
+    assert torch.equal(serial[: n_neighbors + 1], quadratic[: int(quadratic[0]) + 1])
+    assert torch.equal(parallel_first, serial)
+    assert torch.equal(parallel_second, serial)
+
+    monkeypatch.setenv("TMOL_SHARED_BLOCK_NEIGHBORS", "0")
+    legacy_scores = scorer.unweighted_scores(pose.coords)
+    monkeypatch.setenv("TMOL_SHARED_BLOCK_NEIGHBORS", "compact")
+    compact_scores = scorer.unweighted_scores(pose.coords)
+    torch.testing.assert_close(compact_scores, legacy_scores, atol=1e-5, rtol=1e-5)
 
 
 def test_score_function_resolves_unindexed_cuda(default_database, torch_device):
@@ -481,6 +755,7 @@ def test_cuda_graphed_protein_score_matches_eager(ubq_pdb, torch_device):
     expected_terms = eager(pose_stack.coords, sum_terms=False, apply_weights=False)
 
     graphed = sfxn.render_whole_pose_scoring_module(pose_stack, cuda_graph=True)
+    assert graphed._cuda_forward_graph_uses_fused_execution
     graph_coords = pose_stack.coords.detach().clone().requires_grad_(True)
     graph_score = graphed(graph_coords)
     (graph_grad,) = torch.autograd.grad(graph_score.sum(), graph_coords)
@@ -497,6 +772,40 @@ def test_cuda_graphed_protein_score_matches_eager(ubq_pdb, torch_device):
     torch.testing.assert_close(
         graphed(pose_stack.coords, sum_terms=False, apply_weights=False),
         expected_terms,
+    )
+
+    # Captured graphs read the scorer's weight buffer at replay time.  Keep
+    # every canonical lane independently editable even when the internal
+    # execution planner groups compatible terms into one traversal.
+    with torch.no_grad():
+        eager.weights.copy_(
+            torch.linspace(
+                0.0,
+                1.0,
+                eager.weights.numel(),
+                device=eager.weights.device,
+                dtype=eager.weights.dtype,
+            ).reshape_as(eager.weights)
+        )
+        graphed.weights.copy_(eager.weights)
+    reweighted_coords = pose_stack.coords.detach().clone().requires_grad_(True)
+    expected_reweighted = eager(reweighted_coords)
+    (expected_reweighted_grad,) = torch.autograd.grad(
+        expected_reweighted.sum(), reweighted_coords
+    )
+    graph_reweighted_coords = pose_stack.coords.detach().clone().requires_grad_(True)
+    graph_reweighted = graphed(graph_reweighted_coords)
+    (graph_reweighted_grad,) = torch.autograd.grad(
+        graph_reweighted.sum(), graph_reweighted_coords
+    )
+    torch.testing.assert_close(
+        graph_reweighted, expected_reweighted, rtol=1e-5, atol=1e-3
+    )
+    torch.testing.assert_close(
+        graph_reweighted_grad,
+        expected_reweighted_grad,
+        rtol=1e-4,
+        atol=1e-3,
     )
 
     changed_coords = pose_stack.coords.detach().clone()
@@ -636,6 +945,7 @@ def test_large_cuda_compact_scores_match_block_pair_reference(
     # Both the inference graph's side streams and the autograd graph must
     # preserve the device-resident compact neighbor count.
     whole_scorer.enable_cuda_graphs(whole_coords, mode="both")
+    assert not whole_scorer._cuda_forward_graph_uses_fused_execution
     graph_coords = pose.coords.detach().clone().requires_grad_(True)
     graph_score = whole_scorer(graph_coords).sum()
     graph_grad = torch.autograd.grad(graph_score, graph_coords)[0]

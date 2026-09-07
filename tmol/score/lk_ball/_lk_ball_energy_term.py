@@ -248,9 +248,10 @@ class LKBallEnergyTerm(AtomTypeDependentTerm, HBondDependentTerm):
             gen_pose_waters,
         )
 
-        common_args = args[:-2]
-        pose_stack = args[-2]
-        block_pair_scoring = args[-1]
+        common_args = args[:-3]
+        pose_stack = args[-3]
+        block_pair_scoring = args[-2]
+        shared_block_neighbors = args[-1]
 
         args = [
             *common_args,
@@ -298,6 +299,7 @@ class LKBallEnergyTerm(AtomTypeDependentTerm, HBondDependentTerm):
             self._max_dis,
             water_coords,
             block_pair_scoring,
+            shared_block_neighbors,
         ]
         if common_args[0].dtype == torch.float64:
             convert_float64(args)
@@ -371,6 +373,9 @@ class LKBallEnergyTerm(AtomTypeDependentTerm, HBondDependentTerm):
 
     def get_rotamer_score_term_function(self):
         return self.rotamer_score_lk_ball
+
+    def get_block_neighbor_cutoff(self):
+        return self._max_dis
 
     def get_score_term_attributes(self, pose_stack):
         return [pose_stack]

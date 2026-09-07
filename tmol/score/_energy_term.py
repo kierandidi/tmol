@@ -112,6 +112,10 @@ class EnergyTerm:
     def get_rotamer_score_term_function(self):
         raise NotImplementedError()
 
+    def get_block_neighbor_cutoff(self):
+        """Maximum whole-pose block-neighbor reach, or ``None`` if unused."""
+        return None
+
     def get_rotamer_score_term_attributes(
         self, pose_stack: PoseStack, rotamer_set: RotamerSet
     ):
@@ -147,12 +151,14 @@ class EnergyTerm:
                 pose_stack.device,
             )
         f = self.get_pose_score_term_function()
+        term_attributes = self.get_score_term_attributes(pose_stack)
 
         return TermWholePoseScoringModule(
             self.class_name(),
             pose_stack,
-            self.get_score_term_attributes(pose_stack),
+            term_attributes,
             f,
+            self.get_block_neighbor_cutoff(),
         )
 
     def render_block_pair_scoring_module(
@@ -175,6 +181,7 @@ class EnergyTerm:
             pose_stack,
             self.get_score_term_attributes(pose_stack),
             f,
+            self.get_block_neighbor_cutoff(),
         )
 
     def render_rotamer_scoring_module(

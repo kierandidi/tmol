@@ -1,3 +1,8 @@
 """Compiled Lennard-Jones and isotropic solvation potentials."""
 
-from ._compiled import ljlk_pose_scores, ljlk_rotamer_scores  # noqa: F401
+from ._compiled import (  # noqa: F401
+    build_compact_block_neighbors,
+    ljlk_elec_pose_scores,
+    ljlk_pose_scores,
+    ljlk_rotamer_scores,
+)

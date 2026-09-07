@@ -1,5 +1,6 @@
 #include <tmol/score/common/device_operations.cpu.impl.hh>
 #include <tmol/score/ljlk/potentials/ljlk_pose_score.impl.hh>
+#include <tmol/score/ljlk/potentials/ljlk_elec_pose_score.impl.hh>
 
 namespace tmol {
 namespace score {
@@ -10,6 +11,17 @@ template struct LJLKPoseScoreDispatch<
     DeviceOperations,
     tmol::Device::CPU,
     float,
+    int>;
+
+template struct LJLKAndElecPoseScoreDispatch<
+    DeviceOperations,
+    tmol::Device::CPU,
+    float,
+    int>;
+template struct LJLKAndElecPoseScoreDispatch<
+    DeviceOperations,
+    tmol::Device::CPU,
+    double,
     int>;
 template struct LJLKPoseScoreDispatch<
     DeviceOperations,

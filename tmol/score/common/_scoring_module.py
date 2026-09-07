@@ -147,21 +147,54 @@ class TermWholePoseScoringModule(TermPoseScoringModule):
         pose_stack,
         term_parameters,
         term_score_poses,
+        block_neighbor_cutoff=None,
     ):
         super(TermWholePoseScoringModule, self).__init__(
             classname, pose_stack, term_parameters, term_score_poses
+        )
+        self.block_neighbor_cutoff = block_neighbor_cutoff
+        self._neighbor_block_type_n_atoms = pose_stack.packed_block_types.n_atoms
+        self.register_buffer(
+            "_empty_block_neighbors",
+            torch.empty((0,), dtype=torch.int32, device=pose_stack.device),
         )
         self._build_static_tails(False)
 
     def forward(
         self,
         coords,
+        shared_block_neighbors=None,
     ):
         flat = coords.flatten(start_dim=0, end_dim=-2)
         tail = self._static_tail_for_coords(coords)
+        if self.block_neighbor_cutoff is not None:
+            if shared_block_neighbors is None:
+                shared_block_neighbors = self._empty_block_neighbors
+            scores, _ = self.term_score_poses(
+                flat,
+                *tail,
+                shared_block_neighbors,
+            )
+            return scores
         # ignore the dispatch_indices return tensor
         scores, _ = self.term_score_poses(flat, *tail)
         return scores
+
+    def build_compact_block_neighbors(self, coords, reach):
+        """Build a common compact list of conservative block-neighbor pairs."""
+        from tmol.score.ljlk.potentials import build_compact_block_neighbors
+
+        flat = coords.detach().flatten(start_dim=0, end_dim=-2)
+        return build_compact_block_neighbors(
+            flat,
+            self.common_parameters[0],
+            self.common_parameters[3],
+            self.common_parameters[4],
+            self.common_parameters[5],
+            self.common_parameters[6],
+            self._neighbor_block_type_n_atoms,
+            reach,
+        )[0]
 
 
 class TermBlockPairScoringModule(TermPoseScoringModule):
@@ -171,9 +204,15 @@ class TermBlockPairScoringModule(TermPoseScoringModule):
         pose_stack,
         term_parameters,
         term_score_poses,
+        block_neighbor_cutoff=None,
     ):
         super(TermBlockPairScoringModule, self).__init__(
             classname, pose_stack, term_parameters, term_score_poses
+        )
+        self.block_neighbor_cutoff = block_neighbor_cutoff
+        self.register_buffer(
+            "_empty_block_neighbors",
+            torch.empty((0,), dtype=torch.int32, device=pose_stack.device),
         )
         self._build_static_tails(True)
 
@@ -183,6 +222,13 @@ class TermBlockPairScoringModule(TermPoseScoringModule):
     ):
         flat = coords.flatten(start_dim=0, end_dim=-2)
         tail = self._static_tail_for_coords(coords)
+        if self.block_neighbor_cutoff is not None:
+            scores, _ = self.term_score_poses(
+                flat,
+                *tail,
+                self._empty_block_neighbors,
+            )
+            return scores
         scores, _ = self.term_score_poses(flat, *tail)
         return scores
 

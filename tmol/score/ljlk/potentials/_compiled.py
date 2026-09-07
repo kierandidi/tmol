@@ -14,4 +14,6 @@ _ops = load_ops(
 )
 
 ljlk_pose_scores = _ops.ljlk_pose_scores
+ljlk_elec_pose_scores = _ops.ljlk_elec_pose_scores
 ljlk_rotamer_scores = _ops.ljlk_rotamer_scores
+build_compact_block_neighbors = _ops.build_compact_block_neighbors
