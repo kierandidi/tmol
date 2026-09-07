@@ -26,7 +26,7 @@ Two derived comparison composites use the same frozen measurements:
 - `figures/tmol-old-to-new-speedup.*` pairs identical structures and shows the
   historical/current runtime ratio by workload, modality, residue length, and
   CPU/GPU batch; faint points are individual pairs and curves summarize
-  log-length bins.
+  linear-length bins.
 - `figures/pyrosetta-tmol-score-term-equivalence.*` compares weighted score
   terms after applying the explicit grouped term crosswalk in
   `src/collect_results.py`. It reports across-structure rank correlation and a

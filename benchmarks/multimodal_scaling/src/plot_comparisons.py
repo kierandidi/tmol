@@ -70,7 +70,7 @@ def paired_speedups(timing: pd.DataFrame) -> pd.DataFrame:
 
 
 def binned_summary(group: pd.DataFrame, maximum_bins: int = 12) -> pd.DataFrame:
-    """Robust trend over log-residue bins without connecting every raw point."""
+    """Robust trend over linear residue bins without connecting every raw point."""
     group = group.sort_values("polymer_residues").copy()
     unique_lengths = group.polymer_residues.nunique()
     bins = min(maximum_bins, unique_lengths, max(1, len(group) // 6))
@@ -83,8 +83,8 @@ def binned_summary(group: pd.DataFrame, maximum_bins: int = 12) -> pd.DataFrame:
                 "q75": [group.speedup.quantile(0.75)],
             }
         )
-    edges = np.geomspace(
-        max(float(group.polymer_residues.min()), 1.0),
+    edges = np.linspace(
+        float(group.polymer_residues.min()),
         float(group.polymer_residues.max()) * (1 + 1e-9),
         bins + 1,
     )
@@ -151,11 +151,16 @@ def plot_speedup_panel(
             label=label,
         )
     ax.axhline(1.0, color="#555555", linestyle="--", linewidth=0.8)
-    ax.set_xscale("log")
-    ax.set_yscale("log", base=2)
-    ax.relim()
-    ax.autoscale_view()
-    ax.margins(x=0.04, y=0.12)
+    ax.set_xscale("linear")
+    ax.set_yscale("linear")
+    x_min = float(panel.polymer_residues.min())
+    x_max = float(panel.polymer_residues.max())
+    x_padding = max(1.0, (x_max - x_min) * 0.04)
+    ax.set_xlim(max(0.0, x_min - x_padding), x_max + x_padding)
+    y_min = min(1.0, float(panel.speedup.min()))
+    y_max = max(1.0, float(panel.speedup.max()))
+    y_padding = max(0.03, (y_max - y_min) * 0.05)
+    ax.set_ylim(max(0.0, y_min - y_padding), y_max + y_padding)
     ax.grid(which="major", color="#D9D9D9", linewidth=0.55)
     ax.grid(which="minor", color="#EEEEEE", linewidth=0.35)
     ax.text(
