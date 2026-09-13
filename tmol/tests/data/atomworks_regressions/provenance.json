@@ -100,5 +100,13 @@
     "generation": "RDKit 2026.3.6: Chem.AddHs; AllChem.EmbedMolecule(randomSeed=20260913); Chem.RemoveHs. First three heavy atoms form ZACX1; the remainder form ZAMN1. Biotite 1.7.1 pdbx.set_structure(include_bonds=True); explicit component atom/bond tables.",
     "sha256": "785fe52cbe85dcbeb55414355fca1236b6386ae7795dfc438b4b21680d8331c8",
     "bytes": 3260
+  },
+  {
+    "fixture": "af3_cyclic_peptide_7ubd.cif",
+    "source": "tests/data/io/7ubd_from_af3.cif",
+    "source_repository": "atomworks-dev",
+    "source_commit": "a1bda7edfcf325bc140091889b9745220adb5eba",
+    "sha256": "c5431cb71173c39b61818676d61113ae34bdc5bcf3e48ba710fff05110e69beb",
+    "bytes": 11360
   }
 ]

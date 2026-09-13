@@ -18,7 +18,6 @@ The structure files retain their original experimental/generated metadata.
 Tests live in `tmol/tests/io/test_atomworks_corpus_regressions.py`,
 `test_atomworks_reader.py`, and
 `tmol/tests/ligand/test_atomworks_modified_components.py`.
-The wider scoring/minimization runner is `review/pr503/run_atomworks_corpus.py`.
 Successful numerical checks do not independently validate the force field.
 
 `macrocycle_1xvk.cif` is the complete RCSB entry used by the wider AtomWorks IO suite. The regression explicitly excludes free Mg and water, verifies QUI cap identity and all 18 covalent links, and scores/minimizes both original and reversed residue orders through both readers. The initial energy must be independent of residue order.
@@ -45,3 +44,8 @@ charge total, retain the source bond, and score/minimize. This validates topolog
 and the existing charge convention; coupled local atom typing and parameter-fit
 validation remain separate work. The manifest records its complete generation
 recipe and stereochemical SMILES.
+
+`af3_cyclic_peptide_7ubd.cif` retains the complete AtomWorks AF3 prediction.
+Both readers construct the eight-residue cycle, remove its polymerization leaving
+atoms, retain every other observed coordinate, and score/minimize. AtomWorks
+continues to reject unknown atom names and preserve retained phosphate oxygens.

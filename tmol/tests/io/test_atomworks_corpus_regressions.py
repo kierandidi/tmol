@@ -19,6 +19,47 @@ from tmol.score import beta2016_score_function
 DATA = Path(__file__).parents[1] / "data" / "atomworks_regressions"
 
 
+@pytest.mark.parametrize("reader", ["tmol", "atomworks"])
+def test_af3_cyclic_peptide_resolves_leaving_atoms_and_minimizes(reader, torch_device):
+    from tmol.io import build_context_from_biotite
+
+    path = DATA / "af3_cyclic_peptide_7ubd.cif"
+    array = atom_array_from_cif(path, reader=reader)
+    site = pdbx.CIFFile.read(path).block["atom_site"]
+    retained = {
+        (str(c), int(r), str(n)): xyz
+        for c, r, n, xyz in zip(
+            array.chain_id, array.res_id, array.atom_name, array.coord
+        )
+    }
+    observed = np.stack(
+        [site[axis].as_array(float) for axis in ("Cartn_x", "Cartn_y", "Cartn_z")],
+        axis=1,
+    )
+    for chain, residue, name, expected in zip(
+        site["auth_asym_id"].as_array(str),
+        site["auth_seq_id"].as_array(int),
+        site["label_atom_id"].as_array(str),
+        observed,
+    ):
+        if name != "OXT":
+            np.testing.assert_allclose(
+                retained[chain, residue, name], expected, atol=1e-6
+            )
+    context = build_context_from_biotite(
+        array, torch_device, prepare_ligands=True, ligand_seed=20260909
+    )
+    pose = pose_stack_from_biotite(array, torch_device, context=context, no_optH=True)
+    assert int((pose.block_type_ind >= 0).sum()) == 8
+    assert all(
+        "OXT" not in pose.packed_block_types.active_block_types[int(i)].atom_to_idx
+        for i in pose.block_type_ind[0]
+    )
+    assert int((pose.inter_residue_connections[..., 0] >= 0).sum()) == 16
+    _assert_all_source_connections(pose, array)
+    _score_and_minimize(pose, context)
+
+
 def test_terminal_nucleoside_keeps_its_backbone_and_minimizes(torch_device):
     pose, context = pose_stack_from_cif(
         DATA / "terminal_nucleotide_145d.cif",
