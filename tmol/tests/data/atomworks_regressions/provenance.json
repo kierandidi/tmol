@@ -120,8 +120,8 @@
     "fixture": "generated_imine_attachment.cif",
     "source": "Synthetic ketimine-linked sugar derived from generated_amine_attachment.cif",
     "source_repository": "tmol",
-    "transformation": "Replace carbonyl O2 by methyl C2 (including component atom/bond tables); make the declared C1-N1 attachment DOUBLE. Rename components ZIMC1/ZIMN1. Preserve the initial coordinates so minimization also resolves the changed bond targets.",
-    "sha256": "a9cdafe825ad38897ad1796d445692283b4e60714c876f5b41c6f4948891978d",
+    "transformation": "Replace carbonyl O2 by methyl C2 (including component atom/bond tables). Move N1 into the first component, make C1-N1 an internal SINGLE bond and N1-C4 the declared DOUBLE attachment. Rename components ZIMC1/ZIMN1. This ring-carbon attachment cannot rotate about its local ring bonds. Preserve the initial coordinates so minimization resolves the changed bond targets.",
+    "sha256": "b96db7d99b0fe2e5677d9750f2ab8230ca3ae68ebea6d102052c90a81e1ceb4a",
     "bytes": 3229
   }
 ]

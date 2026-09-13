@@ -46,10 +46,12 @@ validation remains separate work. The manifest records its complete generation
 recipe and stereochemical SMILES.
 
 `generated_imine_attachment.cif` replaces that fixture's carbonyl oxygen with a
-methyl carbon and declares a double C=N attachment. Both readers must generate
+methyl carbon, moves the nitrogen into the first component, and declares a double
+N1=C4 attachment at a sugar ring carbon. Both readers must generate
 double connection ports and an imine nitrogen without N–H, conserve each residue's
 prepared charge, retain both blocks, and score/minimize. Multiple bonds must not
-receive the generic staggered linkage sampling grid. The manifest records the
+receive the generic staggered linkage sampling grid; its ring endpoint also
+cannot rotate about a local ring bond. The manifest records the
 exact chemical edits; initial coordinates are intentionally retained.
 
 `af3_cyclic_peptide_7ubd.cif` retains the complete AtomWorks AF3 prediction.
