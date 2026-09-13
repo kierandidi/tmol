@@ -20,6 +20,38 @@ from tmol.tests.io.test_atomworks_corpus_regressions import _score_and_minimize
 DATA = Path(__file__).parents[1] / "data" / "atomworks_regressions"
 
 
+@pytest.mark.parametrize("reader", ["tmol", "atomworks"])
+def test_chromophore_with_one_terminal_patch_constructs_and_minimizes(
+    reader, torch_device
+):
+    array = atom_array_from_cif(DATA / "chromophore_3nez.cif.gz", reader=reader)
+    array = array[array.res_name != "HOH"]
+    context = build_context_from_biotite(
+        array, torch_device, prepare_ligands=True, ligand_seed=20260909
+    )
+    assert context.canonical_ordering.restypes_default_termini_mapping["NRQ"] == (
+        None,
+        "cterm",
+    )
+    pose = pose_stack_from_biotite(array, torch_device, context=context, no_optH=True)
+    types = pose.packed_block_types.active_block_types
+    chromophores = [
+        (i, types[int(t)])
+        for i, t in enumerate(pose.block_type_ind[0])
+        if t >= 0 and types[int(t)].base_name == "NRQ"
+    ]
+    assert (
+        len(chromophores)
+        == int((array.res_name[struc.get_residue_starts(array)] == "NRQ").sum())
+        == 4
+    )
+    for block, restype in chromophores:
+        for port in (restype.down_connection_ind, restype.up_connection_ind):
+            assert port >= 0
+            assert pose.inter_residue_connections[0, block, port, 0] >= 0
+    _score_and_minimize(pose, context)
+
+
 def test_aromatic_acyl_cap_keeps_every_heavy_atom_in_its_tree():
     path = DATA / "modified_components_6q9t.cif"
     array = atom_array_from_cif(path)

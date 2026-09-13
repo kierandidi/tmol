@@ -185,7 +185,7 @@ class CanonicalOrdering:
     # variant drops P, so P is mainchain but not required.
     restypes_required_mainchain_atoms: Mapping[str, Optional[Tuple[str, ...]]]
 
-    restypes_default_termini_mapping: Mapping[str, Tuple[str, str]]
+    restypes_default_termini_mapping: Mapping[str, Tuple[Optional[str], Optional[str]]]
 
     # terminal variant names, in the order they are preferred
     NTERM_VARIANTS = ("nterm", "na5prime")
@@ -392,7 +392,8 @@ class CanonicalOrdering:
         """The terminal variants each equivalence class takes.
 
         Read from the variants the database actually carries, so a residue type
-        added to the database is covered without an edit here.
+        added to the database is covered without an edit here. An end with no
+        applicable terminal patch is represented by None.
         """
         suffixes = {}
         for restype in chemdb.residues:
@@ -406,7 +407,7 @@ class CanonicalOrdering:
         for equiv, present in suffixes.items():
             nterm = next((v for v in cls.NTERM_VARIANTS if v in present), None)
             cterm = next((v for v in cls.CTERM_VARIANTS if v in present), None)
-            if nterm is not None and cterm is not None:
+            if nterm is not None or cterm is not None:
                 mapping[equiv] = (nterm, cterm)
         return mapping
 

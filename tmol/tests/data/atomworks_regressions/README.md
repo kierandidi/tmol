@@ -49,3 +49,10 @@ recipe and stereochemical SMILES.
 Both readers construct the eight-residue cycle, remove its polymerization leaving
 atoms, retain every other observed coordinate, and score/minimize. AtomWorks
 continues to reject unknown atom names and preserve retained phosphate oxygens.
+
+`chromophore_3nez.cif.gz` is the complete RCSB entry used by the AtomWorks IO
+suite. NRQ supports a C-terminal patch but no N-terminal patch. Canonical ordering
+must register that available end without requiring both patches. Both readers
+retain all four connected chromophores and score/minimize the constructed pose;
+the AtomWorks route also retains unresolved residues in its input array, which
+the constructor excludes when their required backbone coordinates are absent.

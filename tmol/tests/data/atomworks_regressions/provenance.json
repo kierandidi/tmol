@@ -108,5 +108,12 @@
     "source_commit": "a1bda7edfcf325bc140091889b9745220adb5eba",
     "sha256": "c5431cb71173c39b61818676d61113ae34bdc5bcf3e48ba710fff05110e69beb",
     "bytes": 11360
+  },
+  {
+    "fixture": "chromophore_3nez.cif.gz",
+    "source": "https://files.rcsb.org/download/3NEZ.cif.gz",
+    "source_repository": "RCSB PDB; used by AtomWorks IO test mirror",
+    "sha256": "fc34c9039913cd42dfa967152d022c86457b2c8e9cab7cbd0f1c79138c2d8caf",
+    "bytes": 388601
   }
 ]
