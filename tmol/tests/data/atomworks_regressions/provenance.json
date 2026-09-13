@@ -91,5 +91,14 @@
     "bytes": 606589,
     "compression": "gzip; decompressed bytes identical to source",
     "compressed_sha256": "a4e8d178eeddcd0d5f3edaf67d9dcfa80ebdadd5789651f4e80b218ccf6cf30b"
+  },
+  {
+    "fixture": "generated_amine_attachment.cif",
+    "source": "Synthetic N-acetylated sugar, split into acyl and glycosyl-amine components",
+    "source_repository": "tmol",
+    "smiles": "CC(=O)N[C@@H]1[C@@H](O)O[C@H](CO)[C@@H](O)[C@H]1O",
+    "generation": "RDKit 2026.3.6: Chem.AddHs; AllChem.EmbedMolecule(randomSeed=20260913); Chem.RemoveHs. First three heavy atoms form ZACX1; the remainder form ZAMN1. Biotite 1.7.1 pdbx.set_structure(include_bonds=True); explicit component atom/bond tables.",
+    "sha256": "785fe52cbe85dcbeb55414355fca1236b6386ae7795dfc438b4b21680d8331c8",
+    "bytes": 3260
   }
 ]

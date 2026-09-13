@@ -27,7 +27,7 @@ from tmol.ligand._registry import GENERATED_LENGTH_K, GENERATED_ANGLE_K
 MMFF_HARMONIC_CONVERSION = 143.9325
 
 
-def _parameterized_model(model, ph):
+def _protonated_model(model, ph):
     mol = Chem.Mol(model.molecule)
     if mol.GetNumAtoms() != len(model.atom_array):
         raise ValueError("Conjugate conversion changed the heavy-atom inventory")
@@ -46,6 +46,11 @@ def _parameterized_model(model, ph):
     }
     if set(mapping) != set(range(len(model.atom_array))):
         raise ValueError("Conjugate protonation changed mapped heavy-atom identity")
+    return mol, mapping
+
+
+def _parameterized_model(model, ph):
+    mol, mapping = _protonated_model(model, ph)
     props = AllChem.MMFFGetMoleculeProperties(mol, mmffVariant="MMFF94")
     if props is None:
         raise ValueError("MMFF94 does not cover this capped conjugate")

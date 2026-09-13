@@ -240,15 +240,39 @@ def test_unrecognized_hydrogen_names_can_be_rebuilt(element):
     assert len(atoms) == len(residues) == 1
 
 
-def test_schiff_base_reports_incompatible_attachment_hydrogen_state():
-    # The protonated imine and the inherited lysine patch disagree on attached
-    # hydrogens. Ideal-target lookup must expose that local chemistry gap; it
-    # must not create a conformer or invent an unspecified stereochemical state.
-    # Incomplete covalent partner filtering is independently tested.
-    with pytest.raises(ValueError, match="Attachment atom/hydrogen mapping differs"):
+@pytest.mark.parametrize("reader", ["tmol", "atomworks"])
+def test_generated_amine_attachment_uses_bonded_hydrogen_count(reader, torch_device):
+    from tmol.io import build_context_from_biotite
+    from tmol.ligand._conjugation_patches import _hydrogens_on
+    from tmol.tests.ligand.test_local_conjugate_params import _charges
+
+    array = atom_array_from_cif(DATA / "generated_amine_attachment.cif", reader=reader)
+    context = build_context_from_biotite(
+        array, torch_device, prepare_ligands=True, ligand_seed=20260913
+    )
+    db = context.parameter_database
+    residues = {r.name: r for r in db.chemical.residues}
+    base, patched = residues["ZAMN1"], residues["ZAMN1:conj_N1"]
+    assert len(_hydrogens_on(base, "N1", db.chemical)) == 3
+    assert len(_hydrogens_on(patched, "N1", db.chemical)) == 1
+    assert sum(_charges(db, patched).values()) == pytest.approx(
+        sum(_charges(db, base).values()), abs=1e-8
+    )
+    pose = pose_stack_from_biotite(array, torch_device, context=context, no_optH=True)
+    _assert_all_source_connections(pose, array)
+    _score_and_minimize(pose, context)
+
+
+@pytest.mark.parametrize("reader", ["tmol", "atomworks"])
+def test_schiff_base_rejects_unsupported_double_attachment(reader):
+    # Complete-conjugate protonation removes the extra H at both endpoints.
+    # Generated patches still describe SINGLE attachments: without compatible
+    # local typing/bonded parameters the declared double bond must be rejected.
+    with pytest.raises(ValueError, match="Attachment bond order differs"):
         pose_stack_from_cif(
             DATA / "schiff_base_double_bond.cif",
             torch.device("cpu"),
+            reader=reader,
             prepare_ligands=True,
             ligand_seed=20260909,
             no_optH=True,

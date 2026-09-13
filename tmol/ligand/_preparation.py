@@ -774,19 +774,17 @@ def _polymer_connection_atoms(res_name, lig, canonical_ordering, chemdb):
 
 
 def conjugation_atoms(lig, polymer_ports):
-    """This residue's attachments that do not land on a polymer chain.
+    """Sites outside an ordinary connection between two polymer ports.
 
-    A cap attaches to its neighbour's backbone; a conjugated ligand or a glycan
-    attaches to a sidechain or to another such component. Where the attachment
-    lands is the whole difference, so it is read from the partner rather than
-    from this residue's own chemistry.
+    Both endpoints matter: an acyl cap's inferred polymer port does not turn
+    a glycan amine or a polymer sidechain into a backbone connection.
     """
     partners = lig.connection_partners
     if not partners:
         return frozenset()
     conjugations = set()
     for atom, far_side in partners.items():
-        if not any(
+        if atom not in polymer_ports.get(lig.res_name, ()) or not any(
             partner_atom in polymer_ports[partner_name]
             for partner_name, partner_atom in far_side
         ):
@@ -830,7 +828,7 @@ def _bond_lengths_by_site(atom_array):
     return lengths
 
 
-def _with_conjugation(prep, atoms, chemdb, lengths):
+def _with_conjugation(prep, atoms, chemdb, lengths, hydrogens):
     """``prep`` carrying a patch and charge entry for each attachment site."""
     from dataclasses import replace
 
@@ -843,11 +841,11 @@ def _with_conjugation(prep, atoms, chemdb, lengths):
         return prep
     residue_type = prep.residue_type
     distances = {atom: lengths.get((residue_type.name, atom)) for atom in atoms}
-    patches = conjugation_patches(residue_type, atoms, chemdb, distances)
+    patches = conjugation_patches(residue_type, atoms, chemdb, distances, hydrogens)
     if not patches:
         return prep
     charges = conjugation_charge_entries(
-        residue_type, atoms, chemdb, prep.partial_charges or {}
+        residue_type, atoms, chemdb, prep.partial_charges or {}, hydrogens
     )
     return replace(
         prep,
@@ -857,17 +855,9 @@ def _with_conjugation(prep, atoms, chemdb, lengths):
 
 
 def canonical_conjugation_sites(ligands, polymer_ports, canonical_ordering):
-    """``{residue name: {atom: (component, its attaching atom)}}`` where a
-    prepared component attaches to a residue the database already knows.
+    """Attachment atoms needing patches on residues already in the database.
 
-    The component is kept because what the bond does to the site depends on it:
-    an acyl group takes a hydrogen off a lysine that a plain carbon leaves in
-    place.
-
-    A glycan reaches its protein through serine's OG, which serine declares no
-    connection at, so the canonical partner needs a patch of its own. A
-    backbone link is not one of these: a modified residue's peptide bond lands
-    on its neighbour's polymer connection, which already exists.
+    Ordinary polymer connections already exist and need no conjugation patch.
     """
     known = set(canonical_ordering.restype_io_equiv_classes)
     sites = {}
@@ -878,49 +868,52 @@ def canonical_conjugation_sites(ligands, polymer_ports, canonical_ordering):
                     continue
                 if partner_atom in polymer_ports[partner_name]:
                     continue
-                sites.setdefault(partner_name, {})[partner_atom] = (
-                    lig,
-                    _atom,
-                )
+                sites.setdefault(partner_name, set()).add(partner_atom)
     return sites
 
 
-def _canonical_residue_array(atom_array, res_name):
-    """One residue of this name from the input, for reading its chemistry."""
-    boundaries = struc.get_residue_starts(atom_array, add_exclusive_stop=True)
-    for start, stop in zip(boundaries, boundaries[1:]):
-        if str(atom_array.res_name[start]).strip() == res_name:
-            return atom_array[start:stop]
-    return None
+def _conjugation_hydrogens(atom_array, chemical_database, ph):
+    """Attachment H counts from the same complete chemistry used for scoring.
 
-
-def _site_hydrogen_counts(atom_array, res_name, partners, ph):
-    """How many hydrogens each site keeps once the component is bonded.
-
-    Read from the conjugated molecule rather than assumed: the bond may change
-    what the site is, and only the two fragments together say so.
+    Both sides need the bonded state: an acylated generated amine loses two
+    hydrogens just as a canonical lysine does. Preserve source instance identity
+    while protonating; reusable patches must agree across every instance.
     """
-    from tmol.ligand._conjugation_patches import conjugated_chemistry
+    from tmol.ligand._conjugate_model import iter_capped_conjugate_models
+    from tmol.ligand._connection_params import _model_identity, _protonated_model
 
-    residue_array = _canonical_residue_array(atom_array, res_name)
-    if residue_array is None or residue_array.bonds is None:
+    if atom_array.bonds is None:
         return {}
-    counts = {}
-    for atom, (lig, lig_atom) in partners.items():
-        try:
-            chemistry = conjugated_chemistry(
-                residue_array, atom, lig.atom_array, lig_atom, ph=ph
-            )
-        except Exception:
+    counts, seen = {}, set()
+    for model in iter_capped_conjugate_models(atom_array, chemical_database):
+        identity = _model_identity(model)
+        if identity in seen:
             continue
-        if chemistry and chemistry.get("n_hydrogens") is not None:
-            counts[atom] = int(chemistry["n_hydrogens"])
+        seen.add(identity)
+        mol, mapping = _protonated_model(model, ph)
+        local_by_source = {
+            int(source): local
+            for local, source in enumerate(model.source_atom_indices)
+            if source >= 0
+        }
+        for first, second, _ in model.connections:
+            for source in (first, second):
+                key = (
+                    str(atom_array.res_name[source]).strip(),
+                    str(atom_array.atom_name[source]).strip(),
+                )
+                atom = mol.GetAtomWithIdx(mapping[local_by_source[source]])
+                count = sum(n.GetAtomicNum() == 1 for n in atom.GetNeighbors())
+                previous = counts.setdefault(key, count)
+                if previous != count:
+                    raise ValueError(
+                        f"Incompatible conjugate hydrogen counts for {key}: "
+                        f"{previous} and {count}; distinct chemistry needs distinct residue identities"
+                    )
     return counts
 
 
-def _canonical_conjugation_parameters(
-    param_db, sites, lengths, atom_array=None, ph=7.4
-):
+def _canonical_conjugation_parameters(param_db, sites, lengths, hydrogen_counts):
     """Patches and charges for the database residues a component attaches to."""
     from tmol.ligand._conjugation_patches import (
         charges_for_database_residue,
@@ -943,11 +936,7 @@ def _canonical_conjugation_parameters(
             continue
         base = charges_for_database_residue(param_db, residue_type.name)
         distances = {atom: lengths.get((res_name, atom)) for atom in atoms}
-        hydrogens = (
-            _site_hydrogen_counts(atom_array, res_name, partners, ph)
-            if atom_array is not None
-            else {}
-        )
+        hydrogens = {atom: hydrogen_counts.get((res_name, atom)) for atom in atoms}
         patches = conjugation_patches(
             residue_type, atoms, param_db.chemical, distances, hydrogens
         )
@@ -1242,7 +1231,7 @@ def prepare_ligands(  # noqa: C901
     prepared_ligands: list[tuple[NonStandardResidueInfo, LigandPreparation]] = []
     prepared_polymers: list[LigandPreparation] = []
     ligands_by_name = {lig.res_name: lig for lig in ligands}
-    partner_names = {
+    partner_names = set(ligands_by_name) | {
         name
         for lig in ligands
         for partners in (lig.connection_partners or {}).values()
@@ -1311,15 +1300,44 @@ def prepare_ligands(  # noqa: C901
                 "Skipping %s: %s preparation failed (%s)", lig.res_name, kind, err
             )
             continue
-        # an attachment site becomes a connection the residue can be patched
-        #    into; a component linked at several sites is their combination
-        prep = _with_conjugation(prep, conjugations, param_db.chemical, bond_lengths)
         preparations.append(prep)
         # a polymer residue is not a free molecule, so it is never fragmented
         if is_polymer:
             prepared_polymers.append(prep)
         else:
             prepared_ligands.append((lig, prep))
+
+    hydrogen_counts = {}
+    if preparations:
+        # Base definitions suffice for identifying polymer caps. Avoid a second
+        # database injection/patch expansion merely to read the bonded state.
+        chemistry = attr.evolve(
+            param_db.chemical,
+            residues=(
+                *param_db.chemical.residues,
+                *(p.residue_type for p in preparations),
+            ),
+        )
+        hydrogen_counts = _conjugation_hydrogens(atom_array, chemistry, ph)
+        prepared_by_name = {}
+        for prep in preparations:
+            name = prep.residue_type.name
+            atoms = conjugation_atoms(ligands_by_name[name], polymer_ports)
+            prepared_by_name[name] = _with_conjugation(
+                prep,
+                atoms,
+                param_db.chemical,
+                bond_lengths,
+                {atom: hydrogen_counts.get((name, atom)) for atom in atoms},
+            )
+        preparations = list(prepared_by_name.values())
+        prepared_ligands = [
+            (lig, prepared_by_name[prep.residue_type.name])
+            for lig, prep in prepared_ligands
+        ]
+        prepared_polymers = [
+            prepared_by_name[prep.residue_type.name] for prep in prepared_polymers
+        ]
 
     if prepared_ligands:
         for lig, prep in prepared_ligands:
@@ -1353,8 +1371,7 @@ def prepare_ligands(  # noqa: C901
             param_db,
             canonical_conjugation_sites(ligands, polymer_ports, canonical_ordering),
             bond_lengths,
-            atom_array,
-            ph,
+            hydrogen_counts,
         )
         # Keep shared partner metadata with the source preparation so export
         # and direct injection follow the same path.
