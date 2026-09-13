@@ -4,7 +4,8 @@ The generator-ideals source uses ordinary ligand Cartesian constants and keeps
 the patched residue charges. The private MMFF harmonic diagnostic adds charge
 deltas and uses equilibrium curvatures. Both share typing and construction.
 Comparison fragments are valence-completed references, not physical reactants.
-Local corrections are not yet installed by default preparation.
+Default preparation installs the generator-ideals corrections and exports them
+as guarded replacements.
 """
 
 from dataclasses import dataclass, replace
@@ -370,11 +371,6 @@ def _correct_icoors(rt, mol, props, mapping, neighbors, atoms, bonded, baseline)
         # A one-H amide must use the actual partner connection as its plane
         # reference. A frame on the old amine's sidechain cannot enforce this.
         if physical[conn.atom] == "Nad":
-            hydrogens = [
-                n
-                for n in neighbors[conn.atom]
-                if mol.GetAtomWithIdx(mapping[n]).GetAtomicNum() == 1
-            ]
             if len(hydrogens) == 1 and len(heavy) == 1:
                 name = hydrogens[0]
                 bond = props.GetMMFFBondStretchParams(mol, root, mapping[name])

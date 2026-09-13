@@ -85,7 +85,8 @@ def test_conjugate_params_roundtrip(tmp_path, fixture, torch_device, bundle_copi
 
     # The source ligand may already be installed before its attachment bundle.
     preps = load_params_file(path)
-    source_names = {p.residue_type.name for p in preps}
+    sources = [p for p in preps if p.baseline_sha256 is None]
+    source_names = {p.residue_type.name for p in sources}
     partial = [
         replace(
             p,
@@ -101,7 +102,7 @@ def test_conjugate_params_roundtrip(tmp_path, fixture, torch_device, bundle_copi
             },
             connection_params=(),
         )
-        for p in preps
+        for p in sources
     ]
     existing = inject_ligand_preparations(base, partial)
     enriched = inject_ligand_preparations(existing, preps)
