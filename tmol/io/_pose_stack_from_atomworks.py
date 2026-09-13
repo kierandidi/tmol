@@ -1,4 +1,3 @@
-# flake8: noqa: E201,E231,E241
 import torch
 import numpy
 import toolz
@@ -15,59 +14,19 @@ from tmol.pose import (
     PoseStack,
 )
 
-# ---------------------------------------------------------------------------
-# Atomworks UNIFIED_ATOM37_ENCODING constants (protein subset).
-# Mirrored verbatim from atomworks so that tmol has no runtime dependency on
-# the atomworks package.
-#
-# Index 0  : <M>  (mask token – all-empty atoms)
-# Index 1-20: standard amino acids
-# Index 21 : UNK  (unknown amino acid – all-empty atoms)
-# ---------------------------------------------------------------------------
+# Use AtomWorks' protein token order and atom slots as the source of truth.
+# Copy the public lists so callers cannot mutate AtomWorks' shared encoding.
+from atomworks.ml.encoding_definitions import UNIFIED_ATOM37_ENCODING
 
-# fmt: off
-ATOMWORKS_NAME3S = [
-    "<M>",                                          # 0: mask
-    "ALA", "ARG", "ASN", "ASP", "CYS",             # 1-5
-    "GLN", "GLU", "GLY", "HIS", "ILE",             # 6-10
-    "LEU", "LYS", "MET", "PHE", "PRO",             # 11-15
-    "SER", "THR", "TRP", "TYR", "VAL",             # 16-20
-    "UNK",                                          # 21
-]
-
-# Per-token atom names in the 37-slot layout.
-# Each value is a list of exactly 37 stripped atom-name strings;
-# "" means no atom occupies that slot.
+_ATOMWORKS_MIN_PROTEIN_IDX = UNIFIED_ATOM37_ENCODING.token_to_idx["ALA"]
+_ATOMWORKS_MAX_PROTEIN_IDX = UNIFIED_ATOM37_ENCODING.token_to_idx["VAL"]
+ATOMWORKS_NAME3S = UNIFIED_ATOM37_ENCODING.tokens[
+    : UNIFIED_ATOM37_ENCODING.token_to_idx["UNK"] + 1
+].tolist()
 ATOMWORKS_ATOM37_NAMES = {
-    #                0     1     2     3     4     5     6     7     8     9    10    11    12    13    14    15    16    17    18    19    20    21    22    23    24    25    26    27    28    29    30    31    32    33    34    35    36
-    "<M>": [       "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   ""],
-    "ALA": [      "N", "CA",  "C", "CB",  "O",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "ARG": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "", "CD",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "", "NE",   "",   "",   "",   "",   "","NH1","NH2",   "", "CZ",   "",   "",   "","OXT"],
-    "ASN": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "",   "",   "",   "",   "","ND2","OD1",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "ASP": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OD1","OD2",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "CYS": [      "N", "CA",  "C", "CB",  "O",   "",   "",   "",   "",   "", "SG",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "GLN": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "", "CD",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","NE2","OE1",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "GLU": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "", "CD",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OE1","OE2",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "GLY": [      "N", "CA",  "C",   "",  "O",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "HIS": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "",   "",   "","CD2","ND1",   "",   "",   "",   "",   "","CE1",   "",   "",   "",   "","NE2",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "ILE": [      "N", "CA",  "C", "CB",  "O",   "","CG1","CG2",   "",   "",   "",   "","CD1",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "LEU": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "",   "","CD1","CD2",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "LYS": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "", "CD",   "",   "",   "",   "",   "",   "",   "", "CE",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "", "NZ","OXT"],
-    "MET": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "", "SD", "CE",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "PHE": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "",   "","CD1","CD2",   "",   "",   "",   "",   "",   "","CE1","CE2",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "", "CZ",   "",   "",   "","OXT"],
-    "PRO": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "", "CD",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "SER": [      "N", "CA",  "C", "CB",  "O",   "",   "",   "", "OG",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "THR": [      "N", "CA",  "C", "CB",  "O",   "",   "","CG2",   "","OG1",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "TRP": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "",   "","CD1","CD2",   "",   "",   "",   "",   "",   "",   "","CE2","CE3",   "","NE1",   "",   "",   "","CH2",   "",   "",   "",   "","CZ2","CZ3",   "","OXT"],
-    "TYR": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "",   "","CD1","CD2",   "",   "",   "",   "",   "",   "","CE1","CE2",   "",   "",   "",   "",   "",   "",   "",   "",   "", "OH", "CZ",   "",   "",   "","OXT"],
-    "VAL": [      "N", "CA",  "C", "CB",  "O",   "","CG1","CG2",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "UNK": [       "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   ""],
+    name: UNIFIED_ATOM37_ENCODING.token_atoms[name].tolist()
+    for name in ATOMWORKS_NAME3S
 }
-
-# Protein token index range in the atomworks encoding
-_ATOMWORKS_MIN_PROTEIN_IDX = 1
-_ATOMWORKS_MAX_PROTEIN_IDX = 20
-# fmt: on
 
 
 # ---------------------------------------------------------------------------
@@ -278,7 +237,7 @@ def atomworks_from_pose_stack(
 
 
 # ---------------------------------------------------------------------------
-# Memoized helpers (following the OpenFold / RoseTTAFold2 pattern)
+# Shared protein chemistry and device mappings
 # ---------------------------------------------------------------------------
 
 
