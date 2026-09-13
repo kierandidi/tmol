@@ -152,6 +152,7 @@ def conjugation_patch(
     distance=None,
     chi_name=None,
     n_hydrogens=None,
+    bond_type="SINGLE",
 ):
     """A patch replacing an atom's hydrogens with a connection, or None.
 
@@ -202,7 +203,9 @@ def conjugation_patch(
 
     torsions, chi_samples = (), ()
     if chi_name is not None and frame.grand_parent and frame.great_grand_parent:
-        graph = networkx.Graph((a, b) for a, b, *_ in residue_type.bonds)
+        graph = networkx.Graph(
+            (a, b, {"order": order}) for a, b, order, *_ in residue_type.bonds
+        )
         graph.remove_nodes_from(gone)
         element = _element_for_atom(residue_type, chemdb)
         neighbors = sorted(n for n in graph[atom] if element[n] != "H")
@@ -213,7 +216,11 @@ def conjugation_patch(
                 key=lambda n: (element[n] == "H", n),
             )
             bridges = {frozenset(edge) for edge in networkx.bridges(graph)}
-            across = frozenset((b, atom)) not in bridges or not references
+            across = (
+                graph[b][atom]["order"] != "SINGLE"
+                or frozenset((b, atom)) not in bridges
+                or not references
+            )
             # An icoor may refer to another hydrogen on the same centre.
             # Torsion samples need a bonded four-atom path instead.
             a = (
@@ -222,10 +229,13 @@ def conjugation_patch(
                 else references[0] if references else b
             )
             torsion_frame = attr.evolve(frame, grand_parent=b, great_grand_parent=a)
-            torsion, sample = _linkage_torsion(
-                name, torsion_frame, atom, chi_name, across_connection=across
-            )
-            torsions, chi_samples = (torsion,), (sample,)
+            # Multiple attachment bonds are not freely rotatable. A chi on
+            # the local single bond remains valid when its frame is available.
+            if not across or bond_type == "SINGLE":
+                torsion, sample = _linkage_torsion(
+                    name, torsion_frame, atom, chi_name, across_connection=across
+                )
+                torsions, chi_samples = (torsion,), (sample,)
 
     return VariantType(
         name=f"{CONNECTION_PREFIX}{residue_type.base_name}_{atom}",
@@ -235,7 +245,7 @@ def conjugation_patch(
         add_atoms=(),
         add_atom_aliases=(),
         modify_atoms=modify_atoms,
-        add_connections=(Connection(name=name, atom=f"<{atom}>", type="SINGLE"),),
+        add_connections=(Connection(name=name, atom=f"<{atom}>", type=bond_type),),
         add_bonds=(),
         icoors=icoors,
         add_torsions=torsions,
@@ -244,7 +254,9 @@ def conjugation_patch(
     )
 
 
-def conjugation_patches(residue_type, atoms, chemdb, distances=None, hydrogens=None):
+def conjugation_patches(
+    residue_type, atoms, chemdb, distances=None, hydrogens=None, bond_types=None
+):
     """One patch per attachment site, skipping sites with nothing to displace.
 
     Each site's torsion gets a chi number past every one the residue already
@@ -267,6 +279,7 @@ def conjugation_patches(residue_type, atoms, chemdb, distances=None, hydrogens=N
             distances.get(atom),
             chi_name,
             (hydrogens or {}).get(atom),
+            (bond_types or {}).get(atom, "SINGLE"),
         )
         if patch is not None:
             patches.append(patch)

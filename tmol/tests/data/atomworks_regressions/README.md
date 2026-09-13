@@ -1,13 +1,13 @@
 # AtomWorks regression structures
 
-Except for the synthetic amine attachment and separately sourced RCSB 1xvk, 145d and 1aym entries listed in the manifest, these files are copied unchanged from the local `atomworks-dev` checkout at
+Except for the synthetic amine/imine attachments and separately sourced RCSB entries listed in the manifest, these files are copied unchanged from the local `atomworks-dev` checkout at
 `a1bda7edfcf325bc140091889b9745220adb5eba`. `provenance.json` records each source
 path and SHA-256 digest. AtomWorks is distributed under the BSD 3-Clause license.
 The structure files retain their original experimental/generated metadata.
 
 | File | Regression exercised |
 |---|---|
-| `schiff_base_double_bond.cif` | Retain the declared double bond; after correcting attachment H counts, reject incompatible SINGLE patch parameters. Incomplete partner filtering is covered separately. |
+| `schiff_base_double_bond.cif` | Prepare the declared double attachment and its hydrogen inventory; report the missing lysine backbone instead of discarding one covalent partner. |
 | `unknown_heavy_atom_1a8o.cif` | Distinguish the conflicting author CG / label XYZ identities; retain the author coordinate and reject unknown label atoms or parser deletion. |
 | `unresolved_unl.cif` | Retain all 28 unresolved ligand heavy atoms at NaN; explicitly reject unanchored ligand placement. |
 | `modified_components_6q9t.cif` | Traverse the whole aromatic acyl cap in the covalently connected 4SO–A1IJ4 pair. The targeted test explicitly selects this pair; the original also contains zinc. |
@@ -41,9 +41,16 @@ components require a sidechain conjugation despite the acyl fragment's inferred
 polymer port. Both readers must prepare the linked glycosyl amine with one N–H
 instead of the isolated protonated amine's three, conserve Frank's per-residue
 charge total, retain the source bond, and score/minimize. This validates topology
-and the existing charge convention; coupled local atom typing and parameter-fit
-validation remain separate work. The manifest records its complete generation
+and the existing charge convention, including the local amide type. Independent parameter-fit
+validation remains separate work. The manifest records its complete generation
 recipe and stereochemical SMILES.
+
+`generated_imine_attachment.cif` replaces that fixture's carbonyl oxygen with a
+methyl carbon and declares a double C=N attachment. Both readers must generate
+double connection ports and an imine nitrogen without N–H, conserve each residue's
+prepared charge, retain both blocks, and score/minimize. Multiple bonds must not
+receive the generic staggered linkage sampling grid. The manifest records the
+exact chemical edits; initial coordinates are intentionally retained.
 
 `af3_cyclic_peptide_7ubd.cif` retains the complete AtomWorks AF3 prediction.
 Both readers construct the eight-residue cycle, remove its polymerization leaving

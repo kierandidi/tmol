@@ -654,7 +654,15 @@ def detect_nonstandard_residues(
         residue name.
     """
     chem_comp_types = _component_types_from_annotations(atom_array, chem_comp_types)
-    known_names = set(canonical_ordering.restype_io_equiv_classes)
+    known_names = set(canonical_ordering.restype_io_equiv_classes) | SKIP_RESIDUES
+    residue_starts = struc.get_residue_starts(atom_array)
+    unknown_starts = [
+        start
+        for start in residue_starts
+        if atom_array.res_name[start].strip() not in known_names
+    ]
+    if not unknown_starts:
+        return []
     seen: set[str] = set()
     results: list[NonStandardResidueInfo] = []
     polymer_names = polymer_entity_residues(atom_array)
@@ -675,12 +683,10 @@ def detect_nonstandard_residues(
                 far_side
             )
 
-    residue_starts = struc.get_residue_starts(atom_array)
-
-    for start in residue_starts:
+    for start in unknown_starts:
         res_name = atom_array.res_name[start].strip()
 
-        if res_name in known_names or res_name in SKIP_RESIDUES or res_name in seen:
+        if res_name in seen:
             continue
         seen.add(res_name)
 

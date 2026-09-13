@@ -290,20 +290,40 @@ def test_unrecognized_hydrogen_names_can_be_rebuilt(element):
 
 
 @pytest.mark.parametrize("reader", ["tmol", "atomworks"])
-def test_generated_amine_attachment_uses_bonded_hydrogen_count(reader, torch_device):
+@pytest.mark.parametrize(
+    "kind,n_hydrogens,bond_type", [("amine", 1, "SINGLE"), ("imine", 0, "DOUBLE")]
+)
+def test_generated_amine_attachment_uses_bonded_hydrogen_count(
+    reader, torch_device, kind, n_hydrogens, bond_type
+):
     from tmol.io import build_context_from_biotite
     from tmol.ligand._conjugation_patches import _hydrogens_on
     from tmol.tests.ligand.test_local_conjugate_params import _charges
 
-    array = atom_array_from_cif(DATA / "generated_amine_attachment.cif", reader=reader)
+    array = atom_array_from_cif(
+        DATA / f"generated_{kind}_attachment.cif", reader=reader
+    )
     context = build_context_from_biotite(
         array, torch_device, prepare_ligands=True, ligand_seed=20260913
     )
     db = context.parameter_database
     residues = {r.name: r for r in db.chemical.residues}
-    base, patched = residues["ZAMN1"], residues["ZAMN1:conj_N1"]
+    name = str(array.res_name[array.atom_name == "N1"][0])
+    base, patched = residues[name], residues[name + ":conj_N1"]
     assert len(_hydrogens_on(base, "N1", db.chemical)) == 3
-    assert len(_hydrogens_on(patched, "N1", db.chemical)) == 1
+    assert len(_hydrogens_on(patched, "N1", db.chemical)) == n_hydrogens
+    assert next(c.type for c in patched.connections if c.name == "conj_N1") == bond_type
+    assert next(a.atom_type for a in patched.atoms if a.name == "N1") == (
+        "Nad" if kind == "amine" else "Nim"
+    )
+    if bond_type == "DOUBLE":
+        for rt in residues.values():
+            for connection in rt.connections:
+                if connection.type == "DOUBLE":
+                    assert all(
+                        connection.name not in (t.b.connection, t.c.connection)
+                        for t in rt.torsions
+                    )
     assert sum(_charges(db, patched).values()) == pytest.approx(
         sum(_charges(db, base).values()), abs=1e-8
     )
@@ -313,11 +333,12 @@ def test_generated_amine_attachment_uses_bonded_hydrogen_count(reader, torch_dev
 
 
 @pytest.mark.parametrize("reader", ["tmol", "atomworks"])
-def test_schiff_base_rejects_unsupported_double_attachment(reader):
-    # Complete-conjugate protonation removes the extra H at both endpoints.
-    # Generated patches still describe SINGLE attachments: without compatible
-    # local typing/bonded parameters the declared double bond must be rejected.
-    with pytest.raises(ValueError, match="Attachment bond order differs"):
+def test_schiff_base_reports_missing_covalent_partner_backbone(reader):
+    # The double bond can be prepared, but this source has no LYS N/CA/C
+    # coordinates. Construction must not discard its covalent partner.
+    with pytest.raises(
+        ValueError, match="Cannot discard an incomplete or unsupported residue"
+    ):
         pose_stack_from_cif(
             DATA / "schiff_base_double_bond.cif",
             torch.device("cpu"),

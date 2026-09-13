@@ -115,5 +115,13 @@
     "source_repository": "RCSB PDB; used by AtomWorks IO test mirror",
     "sha256": "fc34c9039913cd42dfa967152d022c86457b2c8e9cab7cbd0f1c79138c2d8caf",
     "bytes": 388601
+  },
+  {
+    "fixture": "generated_imine_attachment.cif",
+    "source": "Synthetic ketimine-linked sugar derived from generated_amine_attachment.cif",
+    "source_repository": "tmol",
+    "transformation": "Replace carbonyl O2 by methyl C2 (including component atom/bond tables); make the declared C1-N1 attachment DOUBLE. Rename components ZIMC1/ZIMN1. Preserve the initial coordinates so minimization also resolves the changed bond targets.",
+    "sha256": "a9cdafe825ad38897ad1796d445692283b4e60714c876f5b41c6f4948891978d",
+    "bytes": 3229
   }
 ]
