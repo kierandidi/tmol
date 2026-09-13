@@ -221,6 +221,13 @@ for struct in structures:
     pose_stack = pose_stack_from_biotite(struct, device, context=context)
 ```
 
+For a coordinate roundtrip whose hydrogen names already match the prepared
+context, pass `no_optH=True, trust_hydrogen_names=True`. The default rebuilds
+hydrogens on generated residue types because raw input names may change during
+protonation. Direct canonical tensor inputs can use `trust_hydrogen_names=True`
+to preserve those coordinates and their gradients. AtomArray export detaches
+coordinates onto the CPU; keep canonical tensors or the PoseStack for guidance.
+
 ### Persist to `.tmol` (for manual edits or cold reuse)
 
 Preparation (SMILES → 3D → typing) is expensive and, for edge-case

@@ -175,6 +175,7 @@ class CanonicalOrdering:
     max_n_canonical_atoms: int
     restype_io_equiv_classes: Tuple[str, ...]
     restypes_ordered_atom_names: Mapping[str, Tuple[str, ...]]
+    restypes_atom_elements: Mapping[str, Mapping[str, str]]
     restypes_atom_index_mapping: Mapping[str, Mapping[str, int]]
     restypes_mainchain_atoms: Mapping[str, Optional[Tuple[str, ...]]]
 
@@ -239,11 +240,21 @@ class CanonicalOrdering:
             return ordered_set()
 
         restypes_all_atom_names = defaultdict(newset)
+        restypes_atom_elements = defaultdict(dict)
+        elements = {at.name: at.element for at in chemdb.atom_types}
         restypes_alt_atom_name_mapping = defaultdict(dict)
 
         for restype in chemdb.residues:
             for at in restype.atoms:
                 restypes_all_atom_names[restype.name3].add(at.name)
+                element = elements[at.atom_type]
+                previous = restypes_atom_elements[restype.name3].setdefault(
+                    at.name, element
+                )
+                if previous != element:
+                    raise ValueError(
+                        f"Conflicting elements for {restype.name3} atom {at.name}"
+                    )
             for at in restype.atom_aliases:
                 if at.alt_name in restypes_alt_atom_name_mapping[restype.name3]:
                     assert (
@@ -258,6 +269,7 @@ class CanonicalOrdering:
         for rt_name3, atoms in extra.items():
             for at in atoms:
                 restypes_all_atom_names[rt_name3].add(at)
+                restypes_atom_elements[rt_name3][at] = "H" if at == "HN" else "N"
 
         restypes_ordered_atom_names = {
             name3: ats.ordered_vals for name3, ats in restypes_all_atom_names.items()
@@ -306,6 +318,7 @@ class CanonicalOrdering:
             max_n_canonical_atoms=max_n_canonical_atoms,
             restype_io_equiv_classes=ordered_restypes,
             restypes_ordered_atom_names=restypes_ordered_atom_names,
+            restypes_atom_elements=dict(restypes_atom_elements),
             restypes_atom_index_mapping=restypes_atom_index_mapping,
             restypes_mainchain_atoms=restypes_mainchain_atoms,
             restypes_required_mainchain_atoms=restypes_required_mainchain_atoms,

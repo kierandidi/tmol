@@ -34,6 +34,7 @@ def pose_stack_from_canonical_form(  # noqa: C901
     cyclic_bonds: Optional[Tensor[torch.int64][:, 3]] = None,
     covalent_bonds: Optional[Tensor[torch.int64][:, 5]] = None,
     *,
+    trust_hydrogen_names: bool = False,
     find_additional_disulfides: Optional[bool] = True,
     find_additional_cyclic_closures: Optional[bool] = True,
     return_chain_ind: bool = False,
@@ -136,6 +137,11 @@ def pose_stack_from_canonical_form(  # noqa: C901
         instead of just a pose stack, with the first argument being the pose stack and
         the second argument being a dictionary with keys corresponding to the requested
         values.
+
+        trust_hydrogen_names: preserve supplied hydrogens even for generated
+            residue types. Use only when their names/indices match this prepared
+            chemical database, such as a canonical-form roundtrip. By default,
+            generated types rebuild hydrogens because preparation can rename them.
 
         return_chain_ind: return the chain-index tensor as "chain_ind" that has been
             "left-justified" from the chain
@@ -317,7 +323,13 @@ def pose_stack_from_canonical_form(  # noqa: C901
         atom_occupancy,
         atom_b_factor,
     ) = take_block_type_atoms_from_canonical(
-        pbt, block_types64, coords, atom_is_present, atom_occupancy, atom_b_factor
+        pbt,
+        block_types64,
+        coords,
+        atom_is_present,
+        atom_occupancy,
+        atom_b_factor,
+        trust_hydrogen_names=trust_hydrogen_names,
     )
 
     # 7

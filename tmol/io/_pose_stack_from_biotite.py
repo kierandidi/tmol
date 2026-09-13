@@ -6,7 +6,7 @@ import biotite.structure
 import logging
 
 from tmol.types import validate_args
-from tmol.chemical import ResidueTypeSet, get_element_from_atom_name
+from tmol.chemical import ResidueTypeSet
 from tmol.database import ParameterDatabase
 from tmol.io import (
     CanonicalForm,
@@ -191,6 +191,9 @@ def pose_stack_from_biotite(  # noqa: C901
             with DunbrackChiSampler.  When True, only missing heavy-atom
             sidechains are rebuilt with Dunbrack; hydrogens are left at the
             kinematically ideal positions produced during pose construction.
+            For prepared ligand names, combine no_optH=True with
+            trust_hydrogen_names=True to retain supplied hydrogen coordinates;
+            otherwise generated ligand types rebuild them during construction.
         prepare_ligands: If True, detect and prepare non-standard residues
             (see ``build_context_from_biotite`` for details).
         ligand_ph: Target pH for ligand protonation (default 7.4, only used when
@@ -1217,88 +1220,81 @@ def _derived_types_for_param_db(
 
 
 @validate_args
-def biotite_from_canonical_form(  # noqa: C901
+def biotite_from_canonical_form(
     cf: CanonicalForm,
     co: CanonicalOrdering | None = None,
 ) -> biotite.structure.AtomArray | biotite.structure.AtomArrayStack:
+    """Export coordinates and chemical/author labels using a shared atom layout.
+
+    Multi-model arrays require identical residue and atom annotations. Their atom
+    layout is the union of resolved atoms; absent coordinates remain NaN. Missing
+    author labels default to internal chain IDs and one-based residue positions.
+    This host-array export detaches coordinates from autograd.
+    """
     import biotite.structure as struc
 
     if co is None:
         co = canonical_ordering_for_biotite()
-    # rts = _restype_set_for_biotite()
-
-    n_poses = cf.coords.size(0)
-    n_residues = cf.coords.size(1)
-    max_atoms = cf.coords.size(2)
-
+    n_poses, n_residues, max_atoms = cf.coords.shape[:3]
     if n_poses > 1 and not _poses_have_identical_metadata(cf):
         raise ValueError(
             "Cannot convert CanonicalForm with multiple poses to biotite structure: "
-            "poses have different metadata (chain_id, res_types, res_labels, "
-            "residue_insertion_codes, or chain_labels). "
-            "Only coordinate differences are allowed for multi-pose conversion."
+            "poses have different metadata. Only coordinate differences are allowed "
+            "for multi-pose conversion."
         )
 
-    # For multi-pose (NMR) structures, all poses must have the same atom
-    # annotations. Use the union of non-NaN atoms across all poses to build
-    # a consistent atom list; missing atoms in individual poses get NaN coords.
-    atom_mask = torch.any(~torch.isnan(cf.coords[:, :, :, 0]), dim=0)
-
-    template_atoms = []
-    atom_indices = []
-    for res_id in range(n_residues):
-        chain_label = cf.chain_labels[0, res_id]
-        res_label = cf.res_labels[0, res_id]
-        res_type_id = cf.res_types[0, res_id].cpu()
-
-        res_name = co.restype_io_equiv_classes[res_type_id]
-        atom_name_list = co.restypes_ordered_atom_names[res_name]
-
-        for atom_id in range(min(max_atoms, len(atom_name_list))):
-            if not atom_mask[res_id, atom_id]:
-                continue
-
-            atom_name = atom_name_list[atom_id]
-            template_atoms.append(
-                struc.Atom(
-                    [0.0, 0.0, 0.0],
-                    chain_id=chain_label,
-                    res_id=res_label,
-                    res_name=res_name,
-                    atom_name=atom_name,
-                    element=get_element_from_atom_name(atom_name),
-                    b_factor=(
-                        cf.atom_b_factor[0, res_id, atom_id]
-                        if cf.atom_b_factor is not None
-                        else None
-                    ),
-                    occupancy=(
-                        cf.atom_occupancy[0, res_id, atom_id]
-                        if cf.atom_occupancy is not None
-                        else None
-                    ),
-                )
-            )
-            atom_indices.append((res_id, atom_id))
-
-    template = struc.array(template_atoms)
-
-    if n_poses == 1:
-        for i, (res_id, atom_id) in enumerate(atom_indices):
-            template.coord[i] = cf.coords[0, res_id, atom_id].cpu().numpy()
-        return template
-
-    poses = []
-    for pose_id in range(n_poses):
-        arr = template.copy()
-        for i, (res_id, atom_id) in enumerate(atom_indices):
-            c = cf.coords[pose_id, res_id, atom_id].cpu()
-            if torch.isnan(c).any():
-                arr.coord[i] = [float("nan")] * 3
-            else:
-                arr.coord[i] = c.numpy()
-        poses.append(arr)
-    return struc.stack(poses)
+    coords = cf.coords.detach().cpu().numpy()
+    res_types = cf.res_types[0].cpu().numpy()
+    present = ~numpy.isnan(coords).any(axis=-1)
+    atom_mask = present.any(axis=0)
+    names, elements, rows, columns = [], [], [], []
+    for res_id in numpy.flatnonzero(res_types >= 0):
+        res_name = co.restype_io_equiv_classes[res_types[res_id]]
+        atom_names = co.restypes_ordered_atom_names[res_name][:max_atoms]
+        indices = numpy.flatnonzero(atom_mask[res_id, : len(atom_names)])
+        names.extend(atom_names[i] for i in indices)
+        elements.extend(
+            co.restypes_atom_elements[res_name][atom_names[i]] for i in indices
+        )
+        rows.extend([res_id] * len(indices))
+        columns.extend(indices)
+    rows, columns = numpy.asarray(rows, dtype=int), numpy.asarray(columns, dtype=int)
+    result = (
+        struc.AtomArray(len(rows))
+        if n_poses == 1
+        else struc.AtomArrayStack(n_poses, len(rows))
+    )
+    selected = coords[:, rows, columns]
+    selected[~present[:, rows, columns]] = numpy.nan
+    result.coord = selected[0] if n_poses == 1 else selected
+    result.set_annotation("atom_name", numpy.asarray(names, dtype=str))
+    result.set_annotation("element", numpy.asarray(elements, dtype=str))
+    result.set_annotation(
+        "res_name", numpy.asarray(co.restype_io_equiv_classes)[res_types[rows]]
+    )
+    chain_labels = (
+        cf.chain_labels
+        if cf.chain_labels is not None
+        else cf.chain_id.cpu().numpy().astype(str)
+    )
+    res_labels = (
+        cf.res_labels
+        if cf.res_labels is not None
+        else numpy.arange(1, n_residues + 1)[None, :]
+    )
+    result.set_annotation("chain_id", numpy.asarray(chain_labels[0, rows], dtype=str))
+    result.set_annotation("res_id", res_labels[0, rows])
+    if cf.residue_insertion_codes is not None:
+        result.set_annotation(
+            "ins_code", numpy.asarray(cf.residue_insertion_codes[0, rows], dtype=str)
+        )
+    for name, values in (
+        ("b_factor", cf.atom_b_factor),
+        ("occupancy", cf.atom_occupancy),
+    ):
+        if values is not None:
+            result.set_annotation(name, values[0, rows, columns].copy())
+    return result
 
 
 @validate_args
@@ -1311,6 +1307,7 @@ def _poses_have_identical_metadata(cf: CanonicalForm) -> bool:
     - res_labels
     - residue_insertion_codes
     - chain_labels
+    - atom_occupancy and atom_b_factor
 
     Only coordinates are allowed to differ between poses.
     """
@@ -1325,18 +1322,16 @@ def _poses_have_identical_metadata(cf: CanonicalForm) -> bool:
     if not torch.all(cf.res_types[0] == cf.res_types[1:]).item():
         return False
 
-    for pose_id in range(1, n_poses):
-        if not numpy.array_equal(cf.res_labels[0], cf.res_labels[pose_id]):
-            return False
-
-    for pose_id in range(1, n_poses):
-        if not numpy.array_equal(
-            cf.residue_insertion_codes[0], cf.residue_insertion_codes[pose_id]
+    for values in (
+        cf.res_labels,
+        cf.residue_insertion_codes,
+        cf.chain_labels,
+        cf.atom_b_factor,
+        cf.atom_occupancy,
+    ):
+        if values is not None and not all(
+            numpy.array_equal(values[0], row, equal_nan=values.dtype.kind in "fc")
+            for row in values[1:]
         ):
             return False
-
-    for pose_id in range(1, n_poses):
-        if not numpy.array_equal(cf.chain_labels[0], cf.chain_labels[pose_id]):
-            return False
-
     return True

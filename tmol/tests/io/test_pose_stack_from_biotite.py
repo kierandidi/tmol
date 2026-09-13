@@ -92,13 +92,53 @@ def test_pose_stack_from_and_to_biotite_multiple_poses_smoke(
 
 
 def test_canonical_form_multipose_metadata_propagation(biotite_1r21, torch_device):
+    import attr
+    from tmol.io._pose_stack_from_biotite import (
+        biotite_from_canonical_form,
+        canonical_ordering_for_biotite,
+    )
+
     cf = canonical_form_from_biotite(biotite_1r21, torch_device=torch_device)
+    co = canonical_ordering_for_biotite()
     assert cf.atom_b_factor is not None
     assert cf.atom_occupancy is not None
     assert cf.atom_b_factor.shape[0] == biotite_1r21.stack_depth()
     assert cf.atom_occupancy.shape[0] == biotite_1r21.stack_depth()
     assert float(cf.atom_b_factor[1].sum()) > 0.0
     assert float(cf.atom_occupancy[1].sum()) > 0.0
+    cf.residue_insertion_codes[:, 0] = "A"
+    cf.chain_labels[:] = "long_author_chain"
+    first_type = co.restype_io_equiv_classes[int(cf.res_types[0, 0])]
+    missing = co.restypes_atom_index_mapping[first_type]["CB"]
+    cf.coords[0, 0, missing] = float("nan")
+    cf.coords.requires_grad_()
+    restored = biotite_from_canonical_form(cf, co)
+    assert restored.stack_depth() == biotite_1r21.stack_depth()
+    assert set(restored.chain_id) == {"long_author_chain"}
+    assert restored.ins_code[0] == "A"
+    missing_row = numpy.flatnonzero(
+        (restored.res_id == restored.res_id[0]) & (restored.atom_name == "CB")
+    )[0]
+    assert numpy.isnan(restored.coord[0, missing_row]).all()
+    numpy.testing.assert_array_equal(
+        restored.coord[1, missing_row], cf.coords[1, 0, missing].detach().cpu().numpy()
+    )
+    canonical = canonical_form_from_biotite(restored, torch_device, co=co)
+    numpy.testing.assert_array_equal(
+        canonical.residue_insertion_codes, cf.residue_insertion_codes
+    )
+    numpy.testing.assert_array_equal(canonical.chain_labels, cf.chain_labels)
+    torch.testing.assert_close(canonical.coords, cf.coords, equal_nan=True)
+
+    # An AtomArrayStack has shared annotations; unequal models cannot be exported
+    # without losing their occupancy or B-factor information.
+    for field in ("atom_b_factor", "atom_occupancy"):
+        changed = getattr(cf, field).copy()
+        changed[1, 0, 0] += 1
+        with pytest.raises(ValueError, match="different metadata"):
+            biotite_from_canonical_form(attr.evolve(cf, **{field: changed}), co)
+    empty = attr.evolve(cf, coords=torch.full_like(cf.coords, float("nan")))
+    assert biotite_from_canonical_form(empty, co).array_length() == 0
 
 
 def test_pose_stack_from_biotite_1ubq_slice_smoke(biotite_1ubq, torch_device):
@@ -164,6 +204,12 @@ def test_ligand_proton_chi_samples_build_finite_coords(torch_device):
     if isinstance(bt_struct, biotite.structure.AtomArrayStack):
         bt_struct = bt_struct[0]
 
+    carbon = numpy.flatnonzero(
+        (bt_struct.res_name == "LG1") & (bt_struct.element == "C")
+    )[0]
+    assert "QZ" not in bt_struct.atom_name
+    bt_struct.atom_name[carbon] = "QZ"
+
     # This file supplies the whole molecule under a code of its own, which the
     # component dictionary defines as an unrelated one, so it is taken as given.
     pose_stack, context = pose_stack_from_biotite(
@@ -180,6 +226,32 @@ def test_ligand_proton_chi_samples_build_finite_coords(torch_device):
     )
     assert lg1.torsions
     assert lg1.chi_samples
+    exported = biotite_from_pose_stack(pose_stack, context.canonical_ordering)
+    assert exported.element[exported.atom_name == "QZ"].tolist() == ["C"]
+    rebuilt = pose_stack_from_biotite(
+        exported,
+        torch_device,
+        context=context,
+        no_optH=True,
+        trust_hydrogen_names=True,
+    )
+    torch.testing.assert_close(rebuilt.coords, pose_stack.coords, rtol=0, atol=0)
+
+    from tmol.io import canonical_form_from_pose_stack, pose_stack_from_canonical_form
+
+    canonical = canonical_form_from_pose_stack(context.canonical_ordering, pose_stack)
+    canonical.coords.requires_grad_()
+    trusted = pose_stack_from_canonical_form(
+        context.canonical_ordering,
+        context.packed_block_types,
+        **canonical.as_dict(),
+        trust_hydrogen_names=True,
+    )
+    trusted.coords.sum().backward()
+    observed = torch.isfinite(canonical.coords)
+    torch.testing.assert_close(
+        canonical.coords.grad[observed], torch.ones_like(canonical.coords[observed])
+    )
 
 
 def test_ligand_build_from_mol2_bond_orders(torch_device):
