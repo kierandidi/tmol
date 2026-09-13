@@ -1,3 +1,5 @@
+"""Match retained backbone atoms across residue types and sampler ownership."""
+
 import attr
 import numpy
 import torch
@@ -24,69 +26,16 @@ from tmol.pack.rotamer import (
     bfs_sidechain_atoms_jit,
 )
 
-# what atoms should we copy over?
-# everything north of "first sidechain atom"?
-# let's have a map from rt x bb-type --> atom-indices on that rt for those bb
-# and then when we want to map between two rts, we ask "what is their rt compatibility"?
-# and then use that mapping
-
-# so
-# all canonical aas except proline are class 1
-# pro is class 2
-# gly is class 3
-#
-# class 1 has n, ca, c, o, h, and ha
-# class 2 has n, ca, c, o, and ha
-# class 3 has n, ca, c, o, and the "left" ha
-
-# how do we tell what classes of backbones there are?
-# we ask:
-# what atoms are upstream of the first sidechain atom
-# for each atom that's upstream of the first sidechain atom
-# who is chemically bound to it, what is the chirality
-# of that connection, and what is the element type of that
-# connection
-
-# then we need to hash that
-# (how???)
-# atoms then should be sorted along mainchain?? and then
-# with chirality
-
-# n -- > (0, 0, 0, 7)
-# h -- > (0, 1, 0, 1)
-# ca --> (1, 0, 0, 6)
-# ha --> (1, 1, 1, 1)
-# c  --> (2, 0, 0, 6)
-# o  --> (2, 1, 0, 8)
-
-# position 0: position along the backbone or backbone you're bonded to
-# position 1: number of bonds from the backbone
-# position 2: chirality: 0 - achiral, 1 - left, 2 - right
-# position 3: element
-
-# how do I determine chirality?
-#
-# if bb atom has three chemical bonds, then
-# treat it as achiral.
-# if it has four chemical bonds, then
-# measure chirality of 4th bond by taking
-# the dot product of sc-i and the cross
-# product of (p_i - p_{i-1}) and (p_{i+1}, p_i)
-# if it's positive, then chirality value of 1
-# if it's negative, then chirality value of 2
-
-# and then the 4th column is the element, so, that needs to be encoded somehow...
-
-# how do we sort atoms further from the backbone?
-# what about when something like: put into the chirality position
-# a counter so that things further from the backbone get noted
-# with a higher count; how can you guarantee uniqueness, though??
-# maybe it should be like an array with an offset based on the chirality
-# of its ancestors back to the backbone where you put
-
 
 @attr.s(auto_attribs=True, frozen=True, slots=True)
 class AtomFingerprint:
+    """Backbone position, tree distance, side of its frame and atomic number.
+
+    Chirality is 0 when unclassified, 1/2 on opposite sides, and 3 in-plane.
+    This distinguishes even glycine's equivalent hydrogens. Duplicate indices
+    disambiguate atoms with the same descriptor independently of sampler roots.
+    """
+
     mc_ind: int
     mc_bond_dist: int
     chirality: int
@@ -125,8 +74,6 @@ def create_non_sidechain_fingerprint(  # noqa: C901
     number_for_element = {}
     for element in chem_db.element_types:
         number_for_element.setdefault(element.name, element.atomic_number)
-    # TO DO: mainchain_atoms determined programatically from
-    # shortest path between up- and down-connection atoms
     mc_at_names = rt.properties.polymer.mainchain_atoms
     mc_atoms = numpy.array(
         [rt.atom_to_idx[at] for at in mc_at_names], dtype=numpy.int32
@@ -136,25 +83,14 @@ def create_non_sidechain_fingerprint(  # noqa: C901
     mc_ind = numpy.full(rt.n_atoms, -1, dtype=numpy.int32)
     mc_ind[mc_atoms] = numpy.arange(mc_atoms.shape[0], dtype=numpy.int32)
 
-    # fd temporary fix for terminal variants
-    # count the number of bonds to non-H for each atom
-    # apl maybe undoing this change
-    n_bonds = numpy.zeros(rt.n_atoms, dtype=numpy.int32)
-    n_nonh_bonds = numpy.zeros(rt.n_atoms, dtype=numpy.int32)
-    for i in range(rt.bond_indices.shape[0]):
-        bonded_atom_type = rt.atoms[rt.bond_indices[i, 1]].atom_type
-        bonded_elem_name = element_for_type[bonded_atom_type]
-        n_bonds[rt.bond_indices[i, 0]] += 1
-        if bonded_elem_name != "H":
-            n_nonh_bonds[rt.bond_indices[i, 0]] += 1
-    # a connection is a bond to the neighbouring residue, so it counts toward
-    #    the substituents of the atom that carries it
-    for conn in rt.connection_to_idx:
-        n_bonds[rt.connection_to_idx[conn]] += 1
-        n_nonh_bonds[rt.connection_to_idx[conn]] += 1
+    # Each directed internal edge and each external connection is one neighbour.
+    n_bonds = numpy.bincount(
+        numpy.concatenate((rt.bond_indices[:, 0], rt.ordered_connection_atoms)),
+        minlength=rt.n_atoms,
+    )
+    icoor_coords = torch.as_tensor(rt.ideal_coords, dtype=torch.float64)
+    chiral_frames = {}
 
-    # mc_ancestors = numpy.full(rt.n_atoms, -1, dtype=numpy.int32)
-    # chiralities = numpy.full(rt.n_atoms, -1, dtype=numpy.int32)
     non_sc_atom_fingerprints = []
     at_for_fingerprint = {}
     fp_seen_count = {}
@@ -186,63 +122,33 @@ def create_non_sidechain_fingerprint(  # noqa: C901
             atom = par
             bonds_from_mc += 1
 
-        # now lets figure out the chirality of this atom
-        # "chirality" here is interpretted in the most liberal of ways
-        # where it can refer to L or D for H-alpha (connected to CA), or
-        # achiral for the H or O atoms bound to the planar N and C atoms,
-        # but it will also interpret something as "chiral" if its MC atom
-        # has four substituents even when two of those substituents are
-        # chemically identical; i.e. as long as the atoms for thse
-        # substituents have different names they are different, thus the
-        # atom that binds them is chiral. So, unintuitively, glycine's CA
-        # will be declared as chiral and we will calculate the chirality
-        # of its substituents
-
-        if bonds_from_mc == 0:
-            chirality = 0
-        elif bonds_from_mc == 1:
-            if n_bonds[atom] == 4:
-                # now we need to measure the chirality of the atom
-                # or, rather, whether this atom is on the "left"
-                # or "right" of the chiral backbone atom.
-                # Measure the improper dihedral given by the
-                # mc atom and two other mc atoms
-
-                mc_ind_for_mc_anc = mc_anc
-                mc1_icoor_ind, mc2_icoor_ind = _mc_inds_for_chiral_mc_atom(
-                    rt, mc_atoms, mc_ind_for_mc_anc
+        # Four substituents need side-of-plane labels even if chemically equal.
+        if bonds_from_mc == 1 and n_bonds[atom] == 4:
+            if mc_anc not in chiral_frames:
+                chiral_frames[mc_anc] = _mc_inds_for_chiral_mc_atom(
+                    rt, mc_atoms, mc_anc
                 )
-
-                mc_anc_icoor_ind = rt.at_to_icoor_ind[atom]
-
-                def t64(coord):
-                    return torch.tensor(coord, dtype=torch.float64).unsqueeze(0)
-
-                at1_coord = t64(rt.ideal_coords[mc1_icoor_ind])
-                at2_coord = t64(rt.ideal_coords[mc_anc_icoor_ind])
-                at3_coord = t64(rt.ideal_coords[mc2_icoor_ind])
-                at4_coord = t64(rt.ideal_coords[rt.at_to_icoor_ind[nsc_at]])
-
-                # now we have four coordinates, measure the dihedral
-                dihe = numpy.degrees(
-                    coord_dihedrals(at4_coord, at2_coord, at1_coord, at3_coord).numpy()[
-                        0
-                    ]
-                )
-                # some atoms are going to be placed in the plane
-                # defined by the three "main chain" atoms. If the
-                # atoms are within an epsilon of a dihedral angle of 0 or 180
-                # then we will label their "chirality" as 3
-                epsilon = 1  # 1 degree of fudge for planarity
-                abs_dihe = numpy.absolute(dihe)
-                if abs_dihe < epsilon or numpy.absolute(180 - abs_dihe) < epsilon:
-                    chirality = 3
-                elif dihe > 0:
-                    chirality = 1
-                else:
-                    chirality = 2
+            first, second = chiral_frames[mc_anc]
+            dihe = numpy.degrees(
+                coord_dihedrals(
+                    icoor_coords[rt.at_to_icoor_ind[nsc_at]][None],
+                    icoor_coords[rt.at_to_icoor_ind[atom]][None],
+                    icoor_coords[first][None],
+                    icoor_coords[second][None],
+                ).item()
+            )
+            # some atoms are going to be placed in the plane
+            # defined by the three "main chain" atoms. If the
+            # atoms are within an epsilon of a dihedral angle of 0 or 180
+            # then we will label their "chirality" as 3
+            epsilon = 1  # 1 degree of fudge for planarity
+            abs_dihe = numpy.absolute(dihe)
+            if abs_dihe < epsilon or numpy.absolute(180 - abs_dihe) < epsilon:
+                chirality = 3
+            elif dihe > 0:
+                chirality = 1
             else:
-                chirality = 0
+                chirality = 2
 
         atom_type_name = rt.atoms[nsc_at].atom_type
         atomic_number = number_for_element[element_for_type[atom_type_name]]
@@ -269,66 +175,50 @@ def create_non_sidechain_fingerprint(  # noqa: C901
     return non_sc_atoms, tuple(non_sc_atom_fingerprints), at_for_fingerprint
 
 
-def _mc_inds_for_chiral_mc_atom(
-    rt,
-    mc_atoms,
-    mc_ind_for_mc_anc,
-):
-    if mc_ind_for_mc_anc == 0:
-        if "down" in rt.icoors:
-            mc1_icoor_ind = rt.icoors_index["down"]
-            mc2_icoor_ind = rt.at_to_icoor_ind[mc_atoms[mc_ind_for_mc_anc + 1]]
-        else:
-            # ok, so, this gets a little complicated if
-            # there are fewer than 3 mainchain atoms
-            # so let's handle those cases later
-            if len(mc_atoms) >= 3:
-                mc1_icoor_ind = rt.at_to_icoor_ind[mc_atoms[mc_ind_for_mc_anc + 1]]
-                mc2_icoor_ind = rt.at_to_icoor_ind[mc_atoms[mc_ind_for_mc_anc + 2]]
-            elif len(mc_atoms) == 2:
-                # TO DO
-                # ?? I don't know
-                # I am having trouble envisioning this "main chain"
-                raise NotImplementedError(
-                    "No logic yet to handle packing a two-atom main chain"
-                )
-            else:
-                # TO DO
-                # ie. elif len(mc_atoms) == 1:
-                # ?? Perhaps this might come up if the
-                # block type is just a single hydroxyl that's been
-                # sheared off a sugar residue to be packed
-                # independently and the "sidechain" is the hydroxyl H
-                # and the "mainchain" is the hydroxyl O.
-                raise NotImplementedError(
-                    "No logic yet to handle packing a one-atom main chain"
-                )
+def _mc_inds_for_chiral_mc_atom(rt, mc_atoms, mc_index):
+    """Two reference points defining the sides of a mainchain atom.
 
-    elif mc_ind_for_mc_anc == len(mc_atoms) - 1:
-        if "up" in rt.icoors:
-            mc1_icoor_ind = rt.at_to_icoor_ind[mc_atoms[mc_ind_for_mc_anc - 1]]
-            mc2_icoor_ind = rt.icoors_index["up"]
-        else:
-            # ok, so this gets a little complicated if there are
-            # fewer than 3 mainchain atoms
-            if len(mc_atoms) == 3:
-                mc1_icoor_ind = rt.at_to_icoor_ind[mc_atoms[mc_ind_for_mc_anc - 1]]
-                mc2_icoor_ind = rt.at_to_icoor_ind[mc_atoms[mc_ind_for_mc_anc - 2]]
-            else:
-                # TO DO
-                # i.e. len(mc_atoms) == 2; if there is only one MC atom, then
-                # it will be the first MC atom, and then we will not reach
-                # the "elif mc_ind_for_mc_anc == len(mc_atoms) - 1"
-                # I don't know what this mainchain looks like
-                raise NotImplementedError(
-                    "No logic yet to handle packing a two-atom main chain"
-                )
-    else:
-        # somewhere in the middle of the main chain (e.g. CA)
-        mc1_icoor_ind = rt.at_to_icoor_ind[mc_atoms[mc_ind_for_mc_anc - 1]]
-        mc2_icoor_ind = rt.at_to_icoor_ind[mc_atoms[mc_ind_for_mc_anc + 1]]
+    Extend the backbone with its connection coordinates. Short caps lacking a
+    third backbone point use their declared construction frame. These labels
+    distinguish substituent positions; they are not CIP stereochemical labels.
+    """
+    backbone = [int(rt.at_to_icoor_ind[atom]) for atom in mc_atoms]
+    if "down" in rt.icoors_index:
+        backbone.insert(0, rt.icoors_index["down"])
+        mc_index += 1
+    if "up" in rt.icoors_index:
+        backbone.append(rt.icoors_index["up"])
+    if len(backbone) >= 3:
+        if mc_index == 0:
+            return backbone[1], backbone[2]
+        if mc_index == len(backbone) - 1:
+            return backbone[-2], backbone[-3]
+        return backbone[mc_index - 1], backbone[mc_index + 1]
 
-    return mc1_icoor_ind, mc2_icoor_ind
+    center = backbone[mc_index]
+    candidates = [index for index in backbone if index != center]
+    for index in (*candidates, center):
+        candidates.extend(int(i) for i in rt.icoors_ancestors[index])
+    # The first two construction points use self references; the first child
+    # placed off their axis supplies the missing plane (e.g. a one-atom cap).
+    candidates.extend(
+        i for i, ancestors in enumerate(rt.icoors_ancestors) if ancestors[0] in backbone
+    )
+    references = []
+    origin = rt.ideal_coords[center]
+    for index in dict.fromkeys(candidates):
+        vector = rt.ideal_coords[index] - origin
+        if index == center or numpy.linalg.norm(vector) < 1e-8:
+            continue
+        if references:
+            first = rt.ideal_coords[references[0]] - origin
+            if numpy.linalg.norm(numpy.cross(first, vector)) > 1e-8:
+                return references[0], index
+        else:
+            references.append(index)
+    raise ValueError(
+        f"{rt.name}: no noncollinear construction frame at {rt.icoors[center].name}"
+    )
 
 
 @validate_args

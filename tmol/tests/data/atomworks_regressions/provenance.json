@@ -123,5 +123,14 @@
     "transformation": "Replace carbonyl O2 by methyl C2 (including component atom/bond tables). Move N1 into the first component, make C1-N1 an internal SINGLE bond and N1-C4 the declared DOUBLE attachment. Rename components ZIMC1/ZIMN1. This ring-carbon attachment cannot rotate about its local ring bonds. Preserve the initial coordinates so minimization resolves the changed bond targets.",
     "sha256": "b96db7d99b0fe2e5677d9750f2ab8230ca3ae68ebea6d102052c90a81e1ceb4a",
     "bytes": 3229
+  },
+  {
+    "fixture": "plp_cap_5t4j.cif.gz",
+    "source": "https://files.rcsb.org/download/5T4J.cif.gz",
+    "source_repository": "RCSB PDB; used by AtomWorks IO tests",
+    "retrieved": "2026-09-12",
+    "transformation": "none; complete compressed mirror entry",
+    "sha256": "ed5c4b6396f73df96ae4c8dbed47c3fd18f79e89e1e35d2fbfdce7a6e73f2c10",
+    "bytes": 169385
   }
 ]

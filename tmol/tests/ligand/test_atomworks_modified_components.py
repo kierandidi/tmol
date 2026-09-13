@@ -21,6 +21,51 @@ DATA = Path(__file__).parents[1] / "data" / "atomworks_regressions"
 
 
 @pytest.mark.parametrize("reader", ["tmol", "atomworks"])
+def test_single_atom_plp_backbone_packs_and_preserves_chirality(
+    reader, torch_device, monkeypatch
+):
+    from tmol.pack.rotamer import create_mainchain_fingerprint
+    from tmol.tests.io.test_atomworks_corpus_regressions import (
+        _assert_all_source_connections,
+    )
+
+    array = atom_array_from_cif(DATA / "plp_cap_5t4j.cif.gz", reader=reader)
+    array = array[array.res_name != "HOH"]
+    context = build_context_from_biotite(
+        array, torch_device, prepare_ligands=True, ligand_seed=20260909
+    )
+    # Missing sidechain atoms trigger packing and fingerprint the PLP cap.
+    assert np.isnan(array.coord).any()
+    pose = pose_stack_from_biotite(array, torch_device, context=context, no_optH=True)
+    starts = struc.get_residue_starts(array, add_exclusive_stop=True)
+    resolved = np.array(
+        [np.isfinite(array.coord[a:b]).any() for a, b in zip(starts[:-1], starts[1:])]
+    )
+    # AtomWorks additionally carries five completely unresolved protein residues.
+    assert int((~resolved).sum()) == (5 if reader == "atomworks" else 0)
+    _assert_all_source_connections(pose, array[np.repeat(resolved, np.diff(starts))])
+    plp = next(rt for rt in context.restype_set.residue_types if rt.name == "PLP")
+    assert plp.properties.polymer.mainchain_atoms == ("C4A",)
+    original = create_mainchain_fingerprint(
+        plp, (), context.parameter_database.chemical
+    )[1]
+    assert len(set(original)) == plp.n_atoms
+    assert {original[plp.atom_to_idx[name]].chirality for name in ("HC4", "HC5")} == {
+        1,
+        2,
+    }
+    with monkeypatch.context() as patch:
+        patch.setattr(plp, "ideal_coords", plp.ideal_coords * [-1, 1, 1])
+        mirrored = create_mainchain_fingerprint(
+            plp, (), context.parameter_database.chemical
+        )[1]
+    for first, reflected in zip(original, mirrored):
+        expected = 3 - first.chirality if first.chirality in (1, 2) else first.chirality
+        assert reflected.chirality == expected
+    _score_and_minimize(pose, context)
+
+
+@pytest.mark.parametrize("reader", ["tmol", "atomworks"])
 def test_chromophore_with_one_terminal_patch_constructs_and_minimizes(
     reader, torch_device
 ):

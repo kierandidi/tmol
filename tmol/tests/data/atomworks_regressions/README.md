@@ -20,6 +20,15 @@ Tests live in `tmol/tests/io/test_atomworks_corpus_regressions.py`,
 `tmol/tests/ligand/test_atomworks_modified_components.py`.
 Successful numerical checks do not independently validate the force field.
 
+`plp_cap_5t4j.cif.gz` retains the complete RCSB entry referenced by the AtomWorks
+IO suite. Rebuilding unresolved sidechains triggers packing of a PLP-derived cap
+with a one-atom backbone. Its fingerprint must retain distinct substituent
+positions using the cap's connection/construction frame. The integrated test
+checks all retained source connections, opposite and reflected hydrogen labels,
+finite scoring/gradients and minimization through both readers. The AtomWorks
+route additionally carries five entirely unresolved protein residues, which
+construction explicitly excludes; it is a partial-input success.
+
 `macrocycle_1xvk.cif` is the complete RCSB entry used by the wider AtomWorks IO suite. The regression explicitly excludes free Mg and water, verifies QUI cap identity and all 18 covalent links, and scores/minimizes both original and reversed residue orders through both readers. The initial energy must be independent of residue order.
 
 `terminal_nucleotide_145d.cif` is the complete RCSB entry used by that suite. Its first MCY must retain a DNA backbone and 5-prime patch, without proximity-inferred conjugations. The asymmetric unit contains two overlapping alternative duplexes. Both readers retain all 24 nucleotide blocks by default; explicitly selecting assembly `"1"` or `"2"` through AtomWorks gives the corresponding 12-residue duplex. The regression checks every phosphodiester link, finite scores/gradients and minimization, and intact bond lengths after relaxing each selected assembly. A temporary translated-copy assembly also checks coordinate transforms, copy identities, and equivalent direct AtomArray construction. Synthetic parameter-generation caps must inherit the source residue's transformation identity.
