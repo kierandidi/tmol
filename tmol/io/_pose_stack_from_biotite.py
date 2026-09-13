@@ -344,12 +344,10 @@ def pose_stack_from_biotite(  # noqa: C901
 def _assert_no_ligand_with_missing_atoms(
     pose_stack: PoseStack, block_has_missing_atoms: "torch.Tensor"
 ) -> None:
-    """Raise RuntimeError if a non-polymer block is flagged with missing atoms.
+    """Reject ligand gaps left unresolved by the coordinate builder.
 
-    The sidechain-rebuild pipeline (DunbrackChiSampler + FixedAAChiSampler)
-    only handles polymer residues; if a ligand reaches it with missing heavy
-    atoms the sampler silently produces no rotamer and the block's coords
-    stay NaN.  Catch that here with a clear, actionable error.
+    Available construction frames have already been used. Polymer rotamer
+    sampling cannot place an unanchored ligand or resolve the remaining gaps.
     """
     pbt = pose_stack.packed_block_types
     block_type_ind = pose_stack.block_type_ind
@@ -389,8 +387,8 @@ def _assert_no_ligand_with_missing_atoms(
     if bad:
         raise RuntimeError(
             "Ligand (non-polymer) block(s) have missing heavy atoms; "
-            "tmol's sidechain rebuild only supports polymer residues. "
-            "Provide a complete ligand structure (or remove the ligand) "
+            "the available construction frames cannot place them. "
+            "Provide enough resolved anchors or a complete ligand structure "
             "before calling pose_stack_from_biotite:\n  " + "\n  ".join(bad)
         )
 

@@ -21,6 +21,75 @@ DATA = Path(__file__).parents[1] / "data" / "atomworks_regressions"
 
 
 @pytest.mark.parametrize("reader", ["tmol", "atomworks"])
+def test_missing_ligand_carbon_reconstructs_and_backpropagates(reader, torch_device):
+    from tmol.io import canonical_form_from_biotite, pose_stack_from_canonical_form
+
+    array = atom_array_from_cif(
+        DATA / "missing_ligand_carbon_5hs6.cif.gz", reader=reader
+    )
+    array = array[(np.char.upper(array.element) != "NA") & (array.res_name != "HOH")]
+    ligand = array[array.res_name == "J3Z"]
+    assert int((ligand.atom_name == "C6").sum()) == 1
+    assert np.isnan(ligand.coord[ligand.atom_name == "C6"]).all()
+    context = build_context_from_biotite(
+        array, torch_device, prepare_ligands=True, ligand_seed=20260909
+    )
+    pose = pose_stack_from_biotite(array, torch_device, context=context, no_optH=True)
+    types = pose.packed_block_types.active_block_types
+    block = next(
+        i for i, t in enumerate(pose.block_type_ind[0]) if types[int(t)].name == "J3Z"
+    )
+    residue = types[int(pose.block_type_ind[0, block])]
+    observed = np.isfinite(ligand.coord).all(axis=-1)
+    indices = [residue.atom_to_idx[name] for name in ligand.atom_name[observed]]
+    _score_and_minimize(pose, context)
+
+    # The tensor constructor must route gradients through the carbon and then
+    # its dependent hydrogens, including passes that initially leave them NaN.
+    canonical = canonical_form_from_biotite(
+        ligand, torch_device, co=context.canonical_ordering
+    )
+    args = list(canonical)
+    source = canonical.coords.clone().requires_grad_()
+    targets = [residue.atom_to_idx[name] for name in ("C6", "HC4", "HC5", "HC6")]
+
+    def rebuild(coords):
+        args[2] = coords
+        return pose_stack_from_canonical_form(
+            context.canonical_ordering, context.packed_block_types, *args
+        )
+
+    rebuilt = rebuild(source)
+    assert torch.isfinite(rebuilt.coords[rebuilt.real_atoms]).all()
+    torch.testing.assert_close(
+        rebuilt.coords[0, indices],
+        torch.as_tensor(ligand.coord[observed], device=torch_device),
+        rtol=0,
+        atol=0,
+    )
+    rebuilt.coords[0, targets].sum().backward()
+    assert torch.isfinite(source.grad).all()
+    assert torch.count_nonzero(source.grad) > 0
+    assert torch.count_nonzero(source.grad[torch.isnan(source)]) == 0
+    torch.testing.assert_close(source.grad.sum(dim=(0, 1, 2)), source.new_full((3,), 4))
+    direction = torch.zeros_like(source)
+    # Perturb the strongest source derivative to avoid a vacuous zero comparison.
+    direction.flatten()[source.grad.abs().argmax()] = 1
+    epsilon = 0.01
+    with torch.no_grad():
+        positive = rebuild(source + epsilon * direction).coords[0, targets].sum()
+        negative = rebuild(source - epsilon * direction).coords[0, targets].sum()
+    torch.testing.assert_close(
+        (positive - negative) / (2 * epsilon),
+        (source.grad * direction).sum(),
+        rtol=0.005,
+        atol=0.005,
+    )
+    with pytest.raises(ValueError, match="missing non-leaf atom"):
+        rebuild(torch.full_like(source, float("nan")))
+
+
+@pytest.mark.parametrize("reader", ["tmol", "atomworks"])
 def test_single_atom_plp_backbone_packs_and_preserves_chirality(
     reader, torch_device, monkeypatch
 ):

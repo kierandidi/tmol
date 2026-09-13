@@ -74,3 +74,10 @@ must register that available end without requiring both patches. Both readers
 retain all four connected chromophores and score/minimize the constructed pose;
 the AtomWorks route also retains unresolved residues in its input array, which
 the constructor excludes when their required backbone coordinates are absent.
+
+`missing_ligand_carbon_5hs6.cif.gz` preserves the complete RCSB entry, including
+the unresolved J3Z carbon C6. Both readers retain its chemical identity. The
+regression excludes sodium and water, constructs the missing carbon and dependent
+hydrogens using prepared internal coordinates, preserves observed ligand atoms,
+and scores/minimizes the protein–ligand complex. The isolated ligand also checks
+gradients through reconstruction against finite differences.

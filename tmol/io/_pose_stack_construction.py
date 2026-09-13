@@ -74,8 +74,10 @@ def pose_stack_from_canonical_form(  # noqa: C901
         should be modeled;" conversely, there is no way to say "do not
         include a particular atom in tmol calculations."
 
-        Currently, all heavy atoms must be provided to tmol except
-        leaf atoms. A "leaf atom" is one that has no atoms that use it
+        Polymer heavy atoms must be provided except for leaf atoms.
+        Non-polymer atoms can also be reconstructed when their declared
+        internal-coordinate frames have sufficient resolved anchors.
+        A "leaf atom" is one that has no atoms that use it
         as a parent or grand parent when describing their icoors.
         Hydrogen atoms are all leaf atoms. Backbone carbonyl oxygens
         are also leaf atoms. Even though hydrogen atoms are optional,
@@ -102,8 +104,8 @@ def pose_stack_from_canonical_form(  # noqa: C901
     covalent_bonds: an optional n-total-bonds x 5 tensor of the cross-residue
         bonds the input declares that are neither backbone links nor
         disulfides: [ [pose_ind, res1_ind, atom1_ind, res2_ind, atom2_ind], ...]
-        where the atom indices are canonical-ordering indices. Nothing
-        consumes these yet.
+        where the atom indices are canonical-ordering indices. The prepared
+        block types must provide matching connection ports at those atoms.
 
     cyclic_bonds: an optional n-total-closures x 3 tensor naming the chains
         whose last residue is chemically bonded back onto their first:
@@ -165,7 +167,7 @@ def pose_stack_from_canonical_form(  # noqa: C901
 
         return_block_has_missing_atoms: returns a [n_pose x max_n_res] bool
             tensor in the dictionary under the key "block_has_missing_atoms" with
-            elements being true iff any non-leaf atoms were missing (NaN). To be used
+            elements being true iff any non-leaf atoms remain missing (NaN). To be used
             with a packer to build these missing atoms. If this argument is False, an
             exception will be thrown when these missing atoms are encountered.
     """

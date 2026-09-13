@@ -27,6 +27,9 @@ def build_missing_leaf_atoms(
     from the input structure will be distributed across the atoms that define the
     geometry of those atoms. A leaf atom is an atom that is not a parent to any other
     atom; these include hydrogens and carbonyl/carboxyl oxygens.
+    Non-polymer heavy atoms are also completed when their declared construction
+    frames are available, followed by atoms that depend on them. Observed atoms
+    are preserved; components without sufficient anchors remain unresolved.
     """
 
     (
@@ -45,20 +48,73 @@ def build_missing_leaf_atoms(
         block_coords,
         block_atom_missing,
         inter_residue_connections,
-        fail_on_missing_nonleaf_atoms,
     )
 
-    new_pose_coords = _actually_build_leaf_coords(
+    # Include anchored ligand heavy atoms in the first pass, then finish their
+    # dependents below. Canonical-only systems keep the single leaf-atom pass.
+    ligand_blocks = None
+    targets = block_leaf_atom_is_missing
+    if packed_block_types.has_nonpolymer_frames:
+        ligand_blocks = (block_types >= 0) & packed_block_types.nonpolymer_types[
+            block_types64.clamp_min(0)
+        ]
+        targets = targets | (ligand_blocks.unsqueeze(-1) & block_atom_missing)
+    pose_coords = block_coords.new_zeros((*pose_stack_atom_is_missing.shape, 3))
+    pose_coords[pose_at_is_real] = block_coords[real_block_atoms]
+    new_pose_coords = _build_coords_from_icoors(
         packed_block_types,
-        block_coords,
-        real_block_atoms,
-        pose_at_is_real,
-        block_leaf_atom_is_missing,
+        pose_coords,
+        targets,
         pose_stack_atom_is_missing,
         block_coord_offset,
         block_types,  # int32s
         inter_residue_connections,
     )
+
+    # Ligand heavy atoms can use the same differentiable construction frames.
+    # Iterate only when a non-polymer block has missing non-leaf atoms; observed
+    # coordinates are copied unchanged and an unanchored component stays NaN.
+    if ligand_blocks is not None and torch.any(ligand_blocks & block_has_missing_atoms):
+        remaining = block_atom_missing.clone()
+        while True:
+            missing_pose = torch.isnan(new_pose_coords).any(dim=-1)
+            remaining[real_block_atoms] = missing_pose[pose_at_is_real]
+            targets = remaining & ligand_blocks.unsqueeze(-1) & real_block_atoms
+            if not torch.any(targets):
+                break
+            built = _build_coords_from_icoors(
+                packed_block_types,
+                new_pose_coords,
+                targets,
+                missing_pose,
+                block_coord_offset,
+                block_types,
+                inter_residue_connections,
+            )
+            if torch.equal(torch.isnan(built).any(dim=-1), missing_pose):
+                break
+            new_pose_coords = built
+        block_atom_missing = remaining
+        block_has_missing_atoms = torch.any(
+            remaining
+            & ~packed_block_types.is_leaf_atom[block_types.clamp_min(0).long()]
+            & real_block_atoms,
+            dim=-1,
+        )
+    if fail_on_missing_nonleaf_atoms and torch.any(block_has_missing_atoms):
+        missing = (
+            block_atom_missing
+            & ~packed_block_types.is_leaf_atom[block_types.clamp_min(0).long()]
+            & real_block_atoms
+        )
+        errors = []
+        for pi, bi, ai in torch.nonzero(missing).cpu().tolist():
+            bt = packed_block_types.active_block_types[int(block_types[pi, bi])]
+            errors.append(
+                f"Error: missing non-leaf atom {bt.atoms[ai].name} on residue {bi} "
+                f"{bt.name} on pose {pi} real res? True"
+            )
+        raise ValueError("\n".join(errors))
 
     # For autogen ligands, added H whose dihedral came from a different
     # conformer than the placed heavy atoms can collide with a neighbor; snap
@@ -88,7 +144,6 @@ def _setup_for_leaf_atom_coord_building(
     block_coords: Tensor[torch.float32][:, :, :, 3],
     block_atom_missing: Tensor[torch.bool][:, :, :],
     inter_residue_connections: Tensor[torch.int32][:, :, :, 2],
-    fail_on_missing_nonleaf_atoms: bool,
 ):
     # ok,
     # we're going to call gen_pose_leaf_atoms,
@@ -131,36 +186,6 @@ def _setup_for_leaf_atom_coord_building(
     non_leaf_atom_is_missing = torch.logical_and(
         block_atom_missing, torch.logical_not(block_at_is_leaf)
     )
-    if fail_on_missing_nonleaf_atoms and torch.any(non_leaf_atom_is_missing):
-        err_msg = []
-        leaf_atom_missing_inds = torch.nonzero(non_leaf_atom_is_missing)
-        for i in range(leaf_atom_missing_inds.shape[0]):
-            i_bt_ind = block_types64[
-                leaf_atom_missing_inds[i, 0], leaf_atom_missing_inds[i, 1]
-            ]
-            i_bt = packed_block_types.active_block_types[i_bt_ind]
-            err_msg.append(
-                " ".join(
-                    [
-                        "Error: missing non-leaf atom",
-                        i_bt.atoms[leaf_atom_missing_inds[i, 2]].name,
-                        "on residue",
-                        str(leaf_atom_missing_inds[i, 1].item()),
-                        i_bt.name,
-                        "on pose",
-                        str(leaf_atom_missing_inds[i, 0].item()),
-                        "real res?",
-                        str(
-                            real_blocks[
-                                leaf_atom_missing_inds[i, 0],
-                                leaf_atom_missing_inds[i, 1],
-                            ].item()
-                        ),
-                    ]
-                )
-            )
-        raise ValueError("\n".join(err_msg))
-
     block_leaf_atom_is_missing = torch.logical_and(block_at_is_leaf, block_atom_missing)
 
     pose_stack_atom_is_missing = torch.zeros(
@@ -186,36 +211,24 @@ def _setup_for_leaf_atom_coord_building(
     )
 
 
-def _actually_build_leaf_coords(
-    packed_block_types,
-    block_coords,
-    real_block_atoms,
-    pose_at_is_real,
-    block_leaf_atom_is_missing,
-    pose_stack_atom_is_missing,
-    block_coord_offset,
-    block_types,  # int32s
-    inter_residue_connections,
+def _build_coords_from_icoors(
+    pbt,
+    coords,
+    targets,
+    missing,
+    offsets,
+    block_types,
+    connections,
 ):
-    pbt = packed_block_types
-    device = pbt.device
-    n_poses = block_coords.shape[0]
-    max_n_ats = pose_stack_atom_is_missing.shape[1]
-
-    pose_like_coords = torch.zeros(
-        (n_poses, max_n_ats, 3), dtype=torch.float32, device=device
-    )
-    pose_like_coords[pose_at_is_real] = block_coords[real_block_atoms]
-
     from tmol.io.details.compiled import gen_pose_leaf_atoms
 
     return gen_pose_leaf_atoms(
-        pose_like_coords,
-        block_leaf_atom_is_missing,
-        pose_stack_atom_is_missing,
-        block_coord_offset,
+        coords,
+        targets,
+        missing,
+        offsets,
         block_types,
-        inter_residue_connections,
+        connections,
         pbt.n_atoms,
         pbt.atom_downstream_of_conn,
         pbt.build_missing_leaf_atom_icoor_ann.anc_uaids,
@@ -245,6 +258,18 @@ def _annotate_packed_block_types_atom_is_leaf_atom(pbt: PackedBlockTypes):
         )
 
     setattr(pbt, "is_leaf_atom", is_leaf_atom.to(device=pbt.device))
+    # A construction frame needs three other atoms, possibly across connections.
+    nonpolymer = [
+        not bt.properties.polymer.is_polymer
+        and (bt.n_atoms > 3 or bool(bt.connections))
+        for bt in pbt.active_block_types
+    ]
+    pbt.has_nonpolymer_frames = any(nonpolymer)
+    pbt.nonpolymer_types = torch.tensor(
+        nonpolymer,
+        dtype=torch.bool,
+        device=pbt.device,
+    )
 
 
 @validate_args

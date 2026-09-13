@@ -132,5 +132,13 @@
     "transformation": "none; complete compressed mirror entry",
     "sha256": "ed5c4b6396f73df96ae4c8dbed47c3fd18f79e89e1e35d2fbfdce7a6e73f2c10",
     "bytes": 169385
+  },
+  {
+    "fixture": "missing_ligand_carbon_5hs6.cif.gz",
+    "source": "https://files.rcsb.org/download/5HS6.cif.gz",
+    "source_repository": "RCSB PDB; used by AtomWorks IO tests",
+    "transformation": "none; complete compressed mirror entry",
+    "sha256": "7d5fd61372fc37d081e6283716325a2ddb02185ada6feb76ce2bc00970620fe6",
+    "bytes": 116464
   }
 ]
