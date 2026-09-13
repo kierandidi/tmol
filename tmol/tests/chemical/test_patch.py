@@ -773,9 +773,7 @@ def test_terminal_and_conjugation_patches_preserve_torsion_support_in_either_ord
     from tmol.ligand._params_file import _load_params_files
     from tmol.ligand._registry import inject_ligand_preparations
 
-    path = (
-        Path(__file__).parents[1] / "data/ligand_params/5cm_patch_composition.tmol"
-    )
+    path = Path(__file__).parents[1] / "data/ligand_params/5cm_patch_composition.tmol"
     (prep,) = _load_params_files([str(path)])
     db = inject_ligand_preparations(ParameterDatabase.get_default(), [prep])
     base = next(r for r in db.chemical.residues if r.name == "5CM")
