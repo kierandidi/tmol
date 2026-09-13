@@ -22,6 +22,25 @@ DATA = Path(__file__).parents[1] / "data" / "atomworks_regressions"
 
 
 @pytest.mark.parametrize("reader", ["tmol", "atomworks"])
+def test_decreasing_water_author_ids_preserve_full_input(reader, torch_device):
+    from tmol.io import build_context_from_biotite
+
+    array = atom_array_from_cif(
+        DATA / "decreasing_water_author_ids_5xnl.cif.gz", reader=reader
+    )
+    assert int(np.isfinite(array.coord).all(axis=-1).sum()) == 98986
+    waters = array[array.res_name == "HOH"]
+    assert len(waters) == struc.get_residue_count(waters) == 1076
+    # Parse the whole photosystem; score protein A with metal cofactors deferred.
+    chain = "A" if reader == "tmol" else "E"  # Author A is label E in this CIF.
+    protein = array[(array.chain_id == chain) & struc.filter_amino_acids(array)]
+    assert struc.get_residue_count(protein) > 300
+    context = build_context_from_biotite(protein, torch_device)
+    pose = pose_stack_from_biotite(protein, torch_device, context=context, no_optH=True)
+    _score_and_minimize(pose, context)
+
+
+@pytest.mark.parametrize("reader", ["tmol", "atomworks"])
 def test_af3_cyclic_peptide_resolves_leaving_atoms_and_minimizes(reader, torch_device):
     from tmol.io import build_context_from_biotite
 

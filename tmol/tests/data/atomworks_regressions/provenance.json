@@ -148,5 +148,13 @@
     "transformation": "none; complete compressed mirror entry",
     "sha256": "908e190519baab5f1245a6e01901d4f551b32e885ec1f46d58acf813f3c73342",
     "bytes": 472608
+  },
+  {
+    "fixture": "decreasing_water_author_ids_5xnl.cif.gz",
+    "source": "https://files.rcsb.org/download/5XNL.cif.gz",
+    "source_repository": "RCSB PDB; used by AtomWorks IO tests",
+    "transformation": "none; complete compressed mirror entry",
+    "sha256": "2bbdcb66fa073d57cc1b3a292ce1a14736dc925a6d49e2196045dcfc45e311bf",
+    "bytes": 2528970
   }
 ]

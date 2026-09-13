@@ -89,3 +89,11 @@ with ordinary solutes plus connected variants, then scores/minimizes it.
 Imidazole N3 has no departing hydrogen; its attachment frame comes from its
 prepared neighbor geometry and receives the connected generator targets.
 Reusing the full preparation for the free solutes must match fresh preparation.
+
+`decreasing_water_author_ids_5xnl.cif.gz` retains the complete 5XNL entry.
+Its water chains have undefined label sequence numbers and decreasing author
+numbers; fallback IDs must keep these residues distinct. The regression parses
+all atoms through both readers, preserves all 98,986 observed atoms and 1,076
+waters, then scores/minimizes protein chain A. Scoring that selected chain does
+not validate the complete photosystem's metal-bound cofactors; metals remain
+outside this regression's scoring scope.
