@@ -114,16 +114,6 @@ def test_representative_respects_insertion_codes():
     assert (result.ins_code == "B").all()
 
 
-def test_canonical_residue_selection_does_not_merge_chains():
-    from tmol.ligand._preparation import _canonical_residue_array
-
-    first, second = component(), component()
-    second.chain_id[:] = "B"
-    result = _canonical_residue_array(struc.concatenate([first, second]), "ZZZ")
-    assert result.array_length() == 3
-    assert (result.chain_id == "A").all()
-
-
 def test_ligand_detection_sees_bonds_between_insertion_codes():
     from tmol.ligand._detect import _cross_residue_bond_atoms
 

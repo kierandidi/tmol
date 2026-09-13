@@ -74,6 +74,9 @@ def _load_complex_cif(target: str):
     # restarts. Biotite's inferred peptide bonds must respect those chain breaks.
     starts = struc.get_chain_starts(structure, add_exclusive_stop=True)
     chain = numpy.repeat(numpy.arange(len(starts) - 1), numpy.diff(starts))
+    # Make this legacy export's inferred segments explicit for the AtomArray
+    # input contract; residue-number decreases alone no longer define a chain.
+    structure.chain_id = chain.astype(str)
     for first, second, _ in structure.bonds.as_array():
         if chain[first] != chain[second] and {
             structure.atom_name[first],
