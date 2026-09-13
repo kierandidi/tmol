@@ -243,11 +243,34 @@ def test_attached_asparagine_is_not_flipped_independently(conjugate_input):
 
 
 @pytest.mark.parametrize("opt_h", [False, True])
+@pytest.mark.parametrize("parameter_source", ["generator-ideals", "mmff94-harmonic"])
 def test_corrected_attachment_pose_charge_geometry_and_gradient(
-    conjugate_input, torch_device, opt_h
+    conjugate_input, torch_device, opt_h, parameter_source
 ):
     fixture, array, database = conjugate_input
-    result = generate_conjugate_parameters(array, database)
+    result = generate_conjugate_parameters(
+        array, database, parameter_source=parameter_source
+    )
+    if parameter_source == "generator-ideals":
+        assert result.charge_model == "conserved-patched-residue-v1"
+        old_types = {r.name: r for r in database.chemical.residues}
+        for row in result.residues:
+            rt = old_types[row.residue_type.name]
+            assert row.partial_charges == _charges(database, rt)
+            records = database.scoring.cartbonded.residue_params
+            baseline = records.get(rt.name, records.get(rt.base_name))
+            for field, stiffness in (
+                ("length_parameters", 300),
+                ("angle_parameters", 80),
+            ):
+                previous = set(getattr(baseline, field))
+                assert all(
+                    p.K == stiffness
+                    for p in getattr(row.cartbonded_params, field)
+                    if p not in previous
+                )
+        assert all(p.K == 300 for r in result.connections for p in r.length_parameters)
+        assert all(p.K == 80 for r in result.connections for p in r.angle_parameters)
     corrected = install(database, result)
     pose = pose_stack_from_biotite(
         array, torch_device, param_db=corrected, no_optH=not opt_h
@@ -262,7 +285,10 @@ def test_corrected_attachment_pose_charge_geometry_and_gradient(
             delta += sum(new_by_name[bt.name].partial_charges.values()) - sum(
                 _charges(database, old_by_name[bt.name]).values()
             )
-    assert delta == pytest.approx(-1.0 if fixture == "biotin" else 0.0, abs=1e-8)
+    expected_delta = (
+        -1.0 if fixture == "biotin" and parameter_source == "mmff94-harmonic" else 0.0
+    )
+    assert delta == pytest.approx(expected_delta, abs=1e-8)
     if fixture == "biotin":
         bi = next(
             bi
@@ -296,3 +322,9 @@ def test_corrected_attachment_pose_charge_geometry_and_gradient(
     values = scorer(coords)
     gradient = torch.autograd.grad(values.sum(), coords)[0]
     assert torch.isfinite(values).all() and torch.isfinite(gradient).all()
+    if parameter_source == "generator-ideals":
+        from tmol.io import build_context_from_biotite
+        from tmol.tests.io.test_atomworks_corpus_regressions import _score_and_minimize
+
+        context = build_context_from_biotite(array, torch_device, param_db=corrected)
+        _score_and_minimize(pose, context)

@@ -1,9 +1,10 @@
 """Local conjugate corrections from connected/disconnected capped models.
 
-This private generator preserves the curated baseline and adds MMFF charge
-changes; changed local bond/angle terms use MMFF equilibrium curvatures. The
-comparison fragments are valence-completed references, not physical reactants.
-It is not yet installed by default preparation.
+The generator-ideals source uses ordinary ligand Cartesian constants and keeps
+the patched residue charges. The private MMFF harmonic diagnostic adds charge
+deltas and uses equilibrium curvatures. Both share typing and construction.
+Comparison fragments are valence-completed references, not physical reactants.
+Local corrections are not yet installed by default preparation.
 """
 
 from dataclasses import dataclass, replace
@@ -169,7 +170,18 @@ def _correct_atoms(
 
 
 def _correct_bonded(
-    mol, props, before, mapping, free_mapping, rt, atoms, neighbors, baseline, rosetta
+    mol,
+    props,
+    before,
+    mapping,
+    free_mapping,
+    rt,
+    atoms,
+    neighbors,
+    baseline,
+    rosetta,
+    *,
+    parameter_source="mmff94-harmonic",
 ):
     free_mol, free_props, _ = before
     conversion = connection.MMFF_HARMONIC_CONVERSION
@@ -202,7 +214,15 @@ def _correct_bonded(
                 changed[size][min(path, path[::-1])] = rowtype(
                     *path,
                     x0=full[2] if size == 2 else math.radians(full[2]),
-                    K=conversion * full[1],
+                    K=(
+                        conversion * full[1]
+                        if parameter_source == "mmff94-harmonic"
+                        else (
+                            connection.GENERATED_LENGTH_K
+                            if size == 2
+                            else connection.GENERATED_ANGLE_K
+                        )
+                    ),
                 )
     present = {a.name for a in atoms}
     physical = {a.name: a.atom_type for a in atoms}
@@ -384,14 +404,20 @@ def _correct_icoors(rt, mol, props, mapping, neighbors, atoms, bonded, baseline)
     )
 
 
-def generate_conjugate_parameters(atom_array, parameter_database, *, ph=7.4):
+def generate_conjugate_parameters(
+    atom_array, parameter_database, *, ph=7.4, parameter_source="mmff94-harmonic"
+):
     """Generate consistent local and connection parameters, without installing.
 
-    Charges add the connected-minus-disconnected MMFF correction to the already
-    patched baseline, undoing the reference-H charges folded onto its parents.
-    Unsupported H additions or nonzero artificial-cap charge changes raise.
+    ``generator-ideals`` retains the already patched charges and uses the
+    ordinary ligand bond/angle constants. The private ``mmff94-harmonic`` source
+    adds connected-minus-disconnected charge deltas, undoing reference-H charges
+    folded onto parents, and rejects artificial-cap charge changes.
     The caller must supply an uncorrected baseline, not a previously corrected database.
     """
+    if parameter_source not in ("generator-ideals", "mmff94-harmonic"):
+        raise ValueError(f"Unknown conjugate parameter source: {parameter_source}")
+    charge_delta = parameter_source == "mmff94-harmonic"
     elements = {a.name: a.element for a in parameter_database.chemical.atom_types}
     charge_index = {
         (p.res, p.atom): p.charge
@@ -413,7 +439,9 @@ def generate_conjugate_parameters(atom_array, parameter_database, *, ph=7.4):
         free_mol, free_props, free_heavy = before
         typing, free_typing = _typing(mol), _typing(free_mol)
         cap_delta = 0.0
-        for local, source in enumerate(model.source_atom_indices):
+        for local, source in (
+            enumerate(model.source_atom_indices) if charge_delta else ()
+        ):
             if source >= 0:
                 continue
             i, j = heavy_map[local], free_heavy[local]
@@ -440,7 +468,7 @@ def generate_conjugate_parameters(atom_array, parameter_database, *, ph=7.4):
                     mol, props, heavy_map, before, mapping, rt, neighbors, elements
                 )
                 charges = _baseline_charges(charge_index, rt)
-                for name, i in mapping.items():
+                for name, i in mapping.items() if charge_delta else ():
                     if name not in free_mapping:
                         continue
                     delta = (
@@ -478,6 +506,7 @@ def generate_conjugate_parameters(atom_array, parameter_database, *, ph=7.4):
                     neighbors,
                     baseline,
                     rosetta,
+                    parameter_source=parameter_source,
                 )
                 icoors = _correct_icoors(
                     rt, mol, props, mapping, neighbors, atoms, bonded, baseline
@@ -499,9 +528,17 @@ def generate_conjugate_parameters(atom_array, parameter_database, *, ph=7.4):
         parameter_database,
         ph=ph,
         _model_consumer=consume,
-        parameter_source="mmff94-harmonic",
+        parameter_source=parameter_source,
     )
-    result = ConjugateParameters(tuple(rows[name] for name in sorted(rows)), ())
+    result = ConjugateParameters(
+        tuple(rows[name] for name in sorted(rows)),
+        (),
+        charge_model=(
+            "curated-baseline-plus-mmff94-delta-v1"
+            if charge_delta
+            else "conserved-patched-residue-v1"
+        ),
+    )
     annotated = []
     for record in connections:
         metadata = json.loads(record.provenance)
