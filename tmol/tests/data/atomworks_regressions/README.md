@@ -7,7 +7,7 @@ The structure files retain their original experimental/generated metadata.
 
 | File | Regression exercised |
 |---|---|
-| `schiff_base_double_bond.cif` | Reject removal of an incomplete lysine while retaining its covalent partner. |
+| `schiff_base_double_bond.cif` | Expose the incompatible patched/protonated hydrogen state; incomplete covalent partner filtering is covered separately. |
 | `unknown_heavy_atom_1a8o.cif` | Distinguish the conflicting author CG / label XYZ identities; retain the author coordinate and reject unknown label atoms or parser deletion. |
 | `unresolved_unl.cif` | Retain all 28 unresolved ligand heavy atoms at NaN; explicitly reject unanchored ligand placement. |
 | `modified_components_6q9t.cif` | Traverse the whole aromatic acyl cap in the covalently connected 4SO–A1IJ4 pair. The targeted test explicitly selects this pair; the original also contains zinc. |
@@ -33,4 +33,6 @@ geometry in one generated conformer. Their transferable bond/angle targets must
 come from the conformer generator's ideals, not individual strained sites. Both
 readers retain every observed non-water residue, every glycan and their source
 connections (entirely unresolved protein residues are explicitly excluded), produce identical
-records after residue reversal/seed changes, and score/minimize both orders.
+records after residue reversal/seed changes, and score/minimize both orders. The
+regression disables optional geometric disulfide inference to require the declared
+source graph exactly; the corpus exercises the default inference policy.

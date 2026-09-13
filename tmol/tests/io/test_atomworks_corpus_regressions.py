@@ -155,7 +155,7 @@ def test_repeated_glycans_share_transferable_attachment_targets(reader, torch_de
         generate_conjugate_connection_params(reversed_array, database, seed=1)
         == records
     )
-    energies = []
+    energies, identities, coordinates = [], [], []
     for source in (array, reversed_array):
         # Require the declared graph exactly in this regression. The corpus
         # runner separately exercises the default disulfide-inference policy.
@@ -179,7 +179,26 @@ def test_repeated_glycans_share_transferable_attachment_targets(reader, torch_de
         assert not np.isfinite(source.coord[~retained]).any()
         assert not source.hetero[~retained].any()
         _assert_all_source_connections(pose, source[retained])
+        blocks = [
+            (pose.packed_block_types.active_block_types[t], offset)
+            for t, offset in zip(
+                pose.block_type_ind[0].tolist(), pose.block_coord_offset[0].tolist()
+            )
+        ]
+        if source is reversed_array:
+            blocks.reverse()
+        identities.append([bt.name for bt, _ in blocks])
+        coordinates.append(
+            torch.cat(
+                [
+                    pose.coords[0, offset : offset + bt.n_atoms].detach()
+                    for bt, offset in blocks
+                ]
+            )
+        )
         energies.append(_score_and_minimize(pose, context))
+    assert identities[0] == identities[1]
+    torch.testing.assert_close(coordinates[0], coordinates[1], atol=1e-4, rtol=0)
     torch.testing.assert_close(energies[0], energies[1], atol=0.002, rtol=1e-5)
 
 
