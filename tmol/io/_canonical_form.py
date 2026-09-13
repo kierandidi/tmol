@@ -52,31 +52,10 @@ class CanonicalForm:
     covalent_bonds: Optional[Tensor[torch.int64][:, 5]] = None
 
     def __iter__(self):
-        yield self.chain_id
-        yield self.res_types
-        yield self.coords
-        yield self.res_labels
-        yield self.residue_insertion_codes
-        yield self.chain_labels
-        yield self.atom_occupancy
-        yield self.atom_b_factor
-        yield self.disulfides
-        yield self.res_not_connected
-        yield self.cyclic_bonds
-        yield self.covalent_bonds
+        return iter(attr.astuple(self, recurse=False))
 
     def as_dict(self):
-        return {
-            "chain_id": self.chain_id,
-            "res_types": self.res_types,
-            "coords": self.coords,
-            "res_labels": self.res_labels,
-            "residue_insertion_codes": self.residue_insertion_codes,
-            "chain_labels": self.chain_labels,
-            "atom_occupancy": self.atom_occupancy,
-            "atom_b_factor": self.atom_b_factor,
-            "disulfides": self.disulfides,
-            "res_not_connected": self.res_not_connected,
-            "cyclic_bonds": self.cyclic_bonds,
-            "covalent_bonds": self.covalent_bonds,
-        }
+        """Constructor keyword arguments sharing the original tensors and arrays."""
+        values = attr.asdict(self, recurse=False)
+        values["res_ins_codes"] = values.pop("residue_insertion_codes")
+        return values
