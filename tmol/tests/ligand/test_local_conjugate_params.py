@@ -21,20 +21,11 @@ prepared_conjugate_input = test_conjugate_model.conjugate_input
 @pytest.fixture(scope="module")
 def conjugate_input(prepared_conjugate_input):
     # Compare both parameter sources against the same uncorrected baseline.
-    # Explicit MMFF records must conflict with existing Frank attachment records.
-    fixture, array, database = prepared_conjugate_input
-    cart = database.scoring.cartbonded
-    return (
-        fixture,
-        array,
-        attr.evolve(
-            database,
-            scoring=attr.evolve(
-                database.scoring,
-                cartbonded=type(cart).from_cartres_dict(cart.residue_params),
-            ),
-        ),
+    fixture, array, _ = prepared_conjugate_input
+    database, _ = test_conjugate_model.prepare_uncorrected_conjugate(
+        array, seed=20250828
     )
+    return fixture, array, database
 
 
 def _charges(database, rt):
@@ -50,7 +41,10 @@ def _charges(database, rt):
     }
 
 
-def test_install_checks_baseline_and_does_not_apply_twice(conjugate_input):
+def test_install_checks_baseline_and_does_not_apply_twice(conjugate_input, tmp_path):
+    from tmol.ligand import load_params_file, prepare_ligands
+    from tmol.ligand._registry import inject_ligand_preparations
+
     _, array, database = conjugate_input
     result = generate_conjugate_parameters(array, database)
     corrected = install(database, result)
@@ -70,6 +64,36 @@ def test_install_checks_baseline_and_does_not_apply_twice(conjugate_input):
     )
     with pytest.raises(ValueError, match="baseline changed"):
         install(changed, result)
+
+    supplied = attr.evolve(
+        result.connections[0],
+        length_parameters=tuple(
+            attr.evolve(row, K=333.0) for row in result.connections[0].length_parameters
+        ),
+    )
+    protected = {supplied.block_type1, supplied.block_type2}
+    reference = inject_residue_params(database, [], connection_params=(supplied,))
+    additions = generate_conjugate_parameters(array, reference, existing=(supplied,))
+    assert not protected.intersection(
+        row.residue_type.name for row in additions.residues
+    )
+    updated = install(reference, additions)
+    path = tmp_path / "supplied-reference.tmol"
+    prepared, _ = prepare_ligands(array, param_db=reference, params_output=str(path))
+    assert prepared.chemical == updated.chemical
+    assert prepared.scoring.cartbonded == updated.scoring.cartbonded
+    assert prepared.scoring.elec == updated.scoring.elec
+    if additions.connections:
+        restored = inject_ligand_preparations(reference, load_params_file(path))
+        assert restored.chemical == prepared.chemical
+        assert restored.scoring.cartbonded == prepared.scoring.cartbonded
+        assert restored.scoring.elec == prepared.scoring.elec
+    assert supplied in updated.scoring.cartbonded.connection_params
+    old = {rt.name: rt for rt in reference.chemical.residues}
+    for rt in updated.chemical.residues:
+        if rt.name in protected:
+            assert rt == old[rt.name]
+            assert _charges(updated, rt) == _charges(reference, rt)
     old = next(r for r in database.chemical.residues if r.name == name)
     changed_rt = attr.evolve(
         old,

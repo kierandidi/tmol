@@ -15,6 +15,19 @@ from tmol.tests.data import data_path
 from tmol.tests.pack.test_conjugated_group_packing import FIXTURES
 
 
+def prepare_uncorrected_conjugate(array, **kwargs):
+    """Retain the disconnected baseline for explicit parameter-source comparisons."""
+    from tmol.ligand import _preparation
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            _preparation,
+            "_prepare_conjugate_params",
+            lambda array, db, ph: (db, (), ()),
+        )
+        return prepare_ligands(array, **kwargs)
+
+
 @pytest.fixture(scope="module", params=sorted(FIXTURES))
 def conjugate_input(request):
     array = atom_array_from_cif(

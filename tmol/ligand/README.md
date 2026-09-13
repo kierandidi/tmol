@@ -271,10 +271,13 @@ that format cannot preserve them.
 
 Preparation generates missing attachment bond/angle records from the conformer
 generator's ideal targets, using the ordinary ligand constants (`K=300` for
-bonds and `K=80` for angles). Supplied connection records take precedence.
-Coupled local atom types, bonded terms and construction corrections can be
-installed through guarded replacement bundles; preparation does not yet install
-those local corrections automatically.
+bonds and `K=80` for angles). The same connected model corrects local atom types,
+bonded terms and construction frames while preserving prepared residue charges
+and Rosetta/generic torsion ownership. For example, acylated lysine uses an amide
+nitrogen and constructs its retained hydrogen in the attachment plane.
+Supplied connection records take precedence and preserve both endpoint residue
+types. Exports include guarded local replacements; loading them checks the
+baseline and repeated preparation does not apply the corrections again.
 
 An exact patched name in `cartbonded.residue_params`, such as `LYS:conj_NZ`,
 supplies a complete `CartRes` replacement for that type; other forms of lysine

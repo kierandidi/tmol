@@ -193,8 +193,9 @@ def test_generated_record_bundle_preserves_model_provenance(
 ):
     _, array, database = conjugate_input
     records = database.scoring.cartbonded.connection_params
-    assert records == generate_conjugate_connection_params(
-        array, database, seed=20250828
+    generated = generate_conjugate_connection_params(array, database, seed=20250828)
+    assert tuple(attr.evolve(r, provenance="") for r in records) == tuple(
+        attr.evolve(r, provenance="") for r in generated
     )
     path = tmp_path / "generated.tmol"
     prepare_ligands(array, seed=20250828, params_output=str(path))
@@ -206,8 +207,9 @@ def test_generated_record_bundle_preserves_model_provenance(
         assert inject_ligand_preparations(enriched, restored) is enriched
 
     # Older bundles without attachment records acquire them on preparation.
-    legacy = [replace(p, connection_params=()) for p in restored]
-    write_params_file(legacy, path, format="tmol")
+    test_conjugate_model.prepare_uncorrected_conjugate(
+        array, seed=20250828, params_output=str(path)
+    )
     regenerated, _ = prepare_ligands(array, params_files=[str(path)], seed=20250828)
     assert regenerated.scoring.cartbonded.connection_params == records
 

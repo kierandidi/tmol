@@ -25,10 +25,12 @@ conjugate_input = test_conjugate_model.conjugate_input
 def bundle(conjugate_input, tmp_path_factory):
     _, array, _ = conjugate_input
     path = tmp_path_factory.mktemp("replacement") / "baseline.tmol"
-    prepare_ligands(array, seed=20250828, params_output=str(path))
+    test_conjugate_model.prepare_uncorrected_conjugate(
+        array, seed=20250828, params_output=str(path)
+    )
     # The private MMFF-delta diagnostic starts from uncorrected chemistry.
     # Its harmonic records must not overwrite the default Frank-convention fit.
-    additions = [replace(p, connection_params=()) for p in load_params_file(path)]
+    additions = load_params_file(path)
     baseline = inject_ligand_preparations(ParameterDatabase.get_default(), additions)
     result = generate_conjugate_parameters(
         array, baseline, parameter_source="mmff94-harmonic"
@@ -217,14 +219,62 @@ def test_serialized_replacement_cannot_lose_guard(bundle, tmp_path, damage):
         load_params_file(path)
 
 
+@pytest.mark.parametrize("source", ["default", "mmff94-harmonic"])
 def test_native_replacement_bundle_scores_and_builds_identically(
-    bundle, tmp_path, torch_device, record_property
+    bundle, tmp_path, torch_device, record_property, source
 ):
     array, baseline, additions, corrections, result = bundle
     path = tmp_path / "native.tmol"
-    write_params_file(additions + corrections, path, format="tmol")
+    if source == "default":
+        expected, _ = prepare_ligands(array, seed=20250828, params_output=str(path))
+        # Reusing a prepared database must also install and export corrections
+        # when there are no new ligands to generate.
+        local_path = tmp_path / "local.tmol"
+        reused, _ = prepare_ligands(
+            array, param_db=baseline, params_output=str(local_path)
+        )
+        _assert_same(reused, expected)
+        _assert_same(
+            inject_ligand_preparations(baseline, load_params_file(local_path)), expected
+        )
+        reloaded = load_params_file(path)
+        assert any(p.baseline_sha256 is not None for p in reloaded)
+        # A branched glycan can need another connection while all of its local
+        # residue types are already protected by supplied reference records.
+        records = expected.scoring.cartbonded.connection_params
+        for missing in records:
+            retained = tuple(r for r in records if r is not missing)
+            protected = {n for r in retained for n in (r.block_type1, r.block_type2)}
+            if not {missing.block_type1, missing.block_type2} <= protected:
+                continue
+            partial = attr.evolve(
+                expected,
+                scoring=attr.evolve(
+                    expected.scoring,
+                    cartbonded=attr.evolve(
+                        expected.scoring.cartbonded, connection_params=retained
+                    ),
+                ),
+            )
+            connection_path = tmp_path / "connection-only.tmol"
+            completed, _ = prepare_ligands(
+                array, param_db=partial, params_output=str(connection_path)
+            )
+            assert completed.chemical == expected.chemical
+            assert completed.scoring.elec == expected.scoring.elec
+            assert {
+                attr.evolve(r, provenance="")
+                for r in completed.scoring.cartbonded.connection_params
+            } == {attr.evolve(r, provenance="") for r in records}
+            _assert_same(
+                inject_ligand_preparations(partial, load_params_file(connection_path)),
+                completed,
+            )
+            break
+    else:
+        write_params_file(additions + corrections, path, format="tmol")
+        expected = install_conjugate_parameters(baseline, result)
     actual, _ = prepare_ligands(array, params_files=[str(path)])
-    expected = install_conjugate_parameters(baseline, result)
     _assert_same(actual, expected)
     values, gradients, poses = [], [], []
     repeat_values, repeat_gradients = [], []

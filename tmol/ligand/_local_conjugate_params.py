@@ -405,7 +405,12 @@ def _correct_icoors(rt, mol, props, mapping, neighbors, atoms, bonded, baseline)
 
 
 def generate_conjugate_parameters(
-    atom_array, parameter_database, *, ph=7.4, parameter_source="generator-ideals"
+    atom_array,
+    parameter_database,
+    *,
+    ph=7.4,
+    parameter_source="generator-ideals",
+    existing=(),
 ):
     """Generate consistent local and connection parameters, without installing.
 
@@ -413,11 +418,15 @@ def generate_conjugate_parameters(
     ordinary ligand bond/angle constants. The private ``mmff94-harmonic`` source
     adds connected-minus-disconnected charge deltas, undoing reference-H charges
     folded onto parents, and rejects artificial-cap charge changes.
-    The caller must supply an uncorrected baseline, not a previously corrected database.
+    Connections in ``existing`` retain their supplied parameters and protect
+    both endpoint residue types from local changes. Other residue types must
+    have an uncorrected baseline.
     """
     if parameter_source not in ("generator-ideals", "mmff94-harmonic"):
         raise ValueError(f"Unknown conjugate parameter source: {parameter_source}")
     charge_delta = parameter_source == "mmff94-harmonic"
+    existing = tuple(existing)
+    protected = {name for r in existing for name in (r.block_type1, r.block_type2)}
     elements = {a.name: a.element for a in parameter_database.chemical.atom_types}
     charge_index = {
         (p.res, p.atom): p.charge
@@ -435,6 +444,12 @@ def generate_conjugate_parameters(
             previously_corrected.update((record.block_type1, record.block_type2))
 
     def consume(model, mol, props, heavy_map, candidates, mappings, adjacency):
+        candidates = {
+            ri: [rt for rt in types if rt.name not in protected]
+            for ri, types in candidates.items()
+        }
+        if not any(candidates.values()):
+            return
         before = connection._parameterized_model(_disconnected_model(model), ph)
         free_mol, free_props, free_heavy = before
         typing, free_typing = _typing(mol), _typing(free_mol)
@@ -467,7 +482,8 @@ def generate_conjugate_parameters(
                 free_mapping, removed = _reference_mapping(
                     mol, props, heavy_map, before, mapping, rt, neighbors, elements
                 )
-                charges = _baseline_charges(charge_index, rt)
+                baseline_charges = _baseline_charges(charge_index, rt)
+                charges = baseline_charges.copy() if charge_delta else baseline_charges
                 for name, i in mapping.items() if charge_delta else ():
                     if name not in free_mapping:
                         continue
@@ -515,7 +531,7 @@ def generate_conjugate_parameters(
                     attr.evolve(rt, atoms=atoms, icoors=icoors),
                     charges,
                     bonded,
-                    _local_identity(rt, _baseline_charges(charge_index, rt), baseline),
+                    _local_identity(rt, baseline_charges, baseline),
                 )
                 if rt.name in rows and rows[rt.name] != row:
                     raise ValueError(
@@ -529,6 +545,7 @@ def generate_conjugate_parameters(
         ph=ph,
         _model_consumer=consume,
         parameter_source=parameter_source,
+        existing=existing,
     )
     result = ConjugateParameters(
         tuple(rows[name] for name in sorted(rows)),
@@ -541,13 +558,18 @@ def generate_conjugate_parameters(
     )
     annotated = []
     for record in connections:
+        baselines = {
+            name: rows[name].baseline_sha256
+            for name in (record.block_type1, record.block_type2)
+            if name in rows
+        }
+        if not baselines:
+            annotated.append(record)
+            continue
         metadata = json.loads(record.provenance)
         metadata["local_conjugate"] = {
             "charge_model": result.charge_model,
-            "baseline_sha256": {
-                name: rows[name].baseline_sha256
-                for name in (record.block_type1, record.block_type2)
-            },
+            "baseline_sha256": baselines,
         }
         annotated.append(
             attr.evolve(record, provenance=json.dumps(metadata, sort_keys=True))

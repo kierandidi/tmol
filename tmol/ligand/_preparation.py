@@ -77,21 +77,70 @@ def _partial_charges_for_residue(param_db, residue_name: str) -> dict[str, float
     }
 
 
-def _prepare_connection_params(atom_array, param_db, ph, seed):
-    from tmol.ligand._connection_params import generate_conjugate_connection_params
+def _prepare_conjugate_params(atom_array, param_db, ph):
+    from tmol.ligand._local_conjugate_params import (
+        generate_conjugate_parameters,
+        install_conjugate_parameters,
+    )
 
     if atom_array.bonds is None:
-        return param_db, ()
-    records = generate_conjugate_connection_params(
+        return param_db, (), ()
+    result = generate_conjugate_parameters(
         atom_array,
         param_db,
         ph=ph,
-        seed=seed,
         existing=param_db.scoring.cartbonded.connection_params,
     )
-    if records:
-        param_db = inject_residue_params(param_db, [], connection_params=records)
-    return param_db, records
+    if not result.connections:
+        return param_db, (), ()
+    param_db = install_conjugate_parameters(param_db, result)
+    replacements = tuple(
+        LigandPreparation(
+            residue_type=row.residue_type,
+            partial_charges=row.partial_charges,
+            cartbonded_params=row.cartbonded_params,
+            baseline_sha256=row.baseline_sha256,
+        )
+        for row in result.residues
+    )
+    return param_db, result.connections, replacements
+
+
+def _write_preparations(preparations, replacements, records, param_db, path):
+    from tmol.ligand._params_io import write_params_file
+    from tmol.ligand._parameter_replacements import _baseline_charges, _local_identity
+
+    preparations = [*preparations, *replacements]
+    if records and not preparations:
+        # A supplied database may need only a new connection record. Carry it
+        # on an unchanged, guarded endpoint so loading still checks its baseline.
+        rt = next(
+            r for r in param_db.chemical.residues if r.name == records[0].block_type1
+        )
+        charges = _baseline_charges(
+            {
+                (p.res, p.atom): p.charge
+                for p in param_db.scoring.elec.atom_charge_parameters
+            },
+            rt,
+        )
+        cart = param_db.scoring.cartbonded.residue_params
+        bonded = cart.get(rt.name, cart.get(rt.base_name))
+        preparations.append(
+            LigandPreparation(
+                residue_type=rt,
+                partial_charges=charges,
+                cartbonded_params=bonded,
+                baseline_sha256=_local_identity(rt, charges, bonded),
+            )
+        )
+    if preparations:
+        first = preparations[0]
+        preparations[0] = replace(
+            first, connection_params=(*first.connection_params, *records)
+        )
+        write_params_file(preparations, path, format="tmol")
+        logger.info("Wrote params to %s", path)
 
 
 def _assert_fragment_names_available(param_db, fragment_preparations) -> None:
@@ -1043,9 +1092,11 @@ def prepare_ligands(  # noqa: C901
     Scans the input AtomArray for residues not in the ParameterDatabase,
     runs each through the unified SMILES→OpenBabel mol2→typing→residue-build
     pipeline, and returns a **new** ParameterDatabase with the ligand data
-    injected. Ligand/glycan attachment lengths and angles use generated capped
-    geometry with the same Cartesian constants as ordinary ligand parameters.
-    Supplied explicit connection records take precedence.
+    injected. Ligand/glycan attachment chemistry uses the connected capped
+    model for local typing, bonded terms and atom construction, preserving
+    prepared residue charges. Lengths and angles use the same Cartesian
+    constants as ordinary ligand parameters. Supplied explicit connection
+    records take precedence and preserve both endpoint residue types.
 
     Args:
         atom_array: A biotite AtomArray from a CIF or PDB file.
@@ -1214,7 +1265,16 @@ def prepare_ligands(  # noqa: C901
 
     if not ligands:
         logger.info("No non-standard residues detected")
-        param_db, _ = _prepare_connection_params(atom_array, param_db, ph, seed)
+        prepared_db, records, replacements = _prepare_conjugate_params(
+            atom_array, param_db, ph
+        )
+        if prepared_db is not param_db:
+            canonical_ordering = rebuild_canonical_ordering(prepared_db)
+        param_db = prepared_db
+        if params_output:
+            _write_preparations(
+                params_preparations, replacements, records, param_db, params_output
+            )
         if return_fragment_definitions:
             return (
                 param_db,
@@ -1387,26 +1447,26 @@ def prepare_ligands(  # noqa: C901
         param_db = inject_ligand_preparations(
             param_db, preparations, strict_atom_types=strict_atom_types
         )
-        param_db, records = _prepare_connection_params(atom_array, param_db, ph, seed)
-        preparations[0] = replace(
-            preparations[0],
-            connection_params=(*preparations[0].connection_params, *records),
+        param_db, records, replacements = _prepare_conjugate_params(
+            atom_array, param_db, ph
         )
         canonical_ordering = rebuild_canonical_ordering(param_db)
 
         if params_output:
-            from tmol.ligand._params_io import write_params_file
-
             # Fragment residue types are an in-memory representation in this
             # first API version. Persist only the fully prepared source ligand.
             sources = {p.residue_type.name for _, p in prepared_ligands}
             sources.update(p.residue_type.name for p in prepared_polymers)
-            write_params_file(
-                [p for p in preparations if p.residue_type.name in sources],
+            _write_preparations(
+                [
+                    *params_preparations,
+                    *(p for p in preparations if p.residue_type.name in sources),
+                ],
+                replacements,
+                records,
+                param_db,
                 params_output,
-                format="tmol",
             )
-            logger.info("Wrote params to %s", params_output)
 
     if return_fragment_definitions:
         return (

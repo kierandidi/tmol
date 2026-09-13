@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import attr
+import json
 import numpy as np
 import biotite.structure as struc
 import biotite.structure.io.pdbx as pdbx
@@ -192,10 +194,16 @@ def test_repeated_glycans_share_transferable_attachment_targets(reader, torch_de
     ]
     # Both repeated sites and separately prepared poses must agree, independent
     # of encounter order or random seed. Supplied records cannot mask regeneration.
-    assert (
-        generate_conjugate_connection_params(reversed_array, database, seed=1)
-        == records
-    )
+    regenerated = generate_conjugate_connection_params(reversed_array, database, seed=1)
+    assert len(regenerated) == len(records)
+    for generated, installed in zip(regenerated, records):
+        metadata = json.loads(installed.provenance)
+        correction = metadata.pop("local_conjugate")
+        assert correction["charge_model"] == "conserved-patched-residue-v1"
+        assert metadata == json.loads(generated.provenance)
+        assert attr.evolve(installed, provenance="") == attr.evolve(
+            generated, provenance=""
+        )
     energies, identities, coordinates = [], [], []
     for source in (array, reversed_array):
         # Require the declared graph exactly in this regression. The corpus
