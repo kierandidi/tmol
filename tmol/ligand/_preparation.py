@@ -15,7 +15,7 @@ import biotite.structure as struc
 import numpy as np
 from rdkit import Chem
 
-from tmol.database import ParameterDatabase, inject_residue_params
+from tmol.database import ParameterDatabase
 from tmol.database.chemical import AtomAlias
 from tmol.io import CanonicalOrdering
 from tmol.ligand._atom_typing import AtomTypeAssignment, assign_tmol_atom_types
