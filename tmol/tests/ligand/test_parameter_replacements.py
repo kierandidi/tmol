@@ -30,7 +30,9 @@ def bundle(conjugate_input, tmp_path_factory):
     # Its harmonic records must not overwrite the default Frank-convention fit.
     additions = [replace(p, connection_params=()) for p in load_params_file(path)]
     baseline = inject_ligand_preparations(ParameterDatabase.get_default(), additions)
-    result = generate_conjugate_parameters(array, baseline)
+    result = generate_conjugate_parameters(
+        array, baseline, parameter_source="mmff94-harmonic"
+    )
     corrections = [
         LigandPreparation(
             residue_type=r.residue_type,

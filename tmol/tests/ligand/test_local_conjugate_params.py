@@ -20,8 +20,8 @@ prepared_conjugate_input = test_conjugate_model.conjugate_input
 
 @pytest.fixture(scope="module")
 def conjugate_input(prepared_conjugate_input):
-    # This private MMFF-delta diagnostic compares against a database without
-    # default attachment records; installing it over the Frank fit must conflict.
+    # Compare both parameter sources against the same uncorrected baseline.
+    # Explicit MMFF records must conflict with existing Frank attachment records.
     fixture, array, database = prepared_conjugate_input
     cart = database.scoring.cartbonded
     return (
@@ -178,7 +178,9 @@ def test_biotin_local_changes_and_canonical_ownership(conjugate_input):
     fixture, array, database = conjugate_input
     if fixture != "biotin":
         pytest.skip("Detailed amide reference uses biotin")
-    result = generate_conjugate_parameters(array, database)
+    result = generate_conjugate_parameters(
+        array, database, parameter_source="mmff94-harmonic"
+    )
     row = next(r for r in result.residues if r.residue_type.name == "LYS:conj_NZ")
     old = next(r for r in database.chemical.residues if r.name == row.residue_type.name)
     old_q = _charges(database, old)
@@ -248,9 +250,12 @@ def test_corrected_attachment_pose_charge_geometry_and_gradient(
     conjugate_input, torch_device, opt_h, parameter_source
 ):
     fixture, array, database = conjugate_input
-    result = generate_conjugate_parameters(
-        array, database, parameter_source=parameter_source
-    )
+    if parameter_source == "generator-ideals":
+        result = generate_conjugate_parameters(array, database)
+    else:
+        result = generate_conjugate_parameters(
+            array, database, parameter_source=parameter_source
+        )
     if parameter_source == "generator-ideals":
         assert result.charge_model == "conserved-patched-residue-v1"
         old_types = {r.name: r for r in database.chemical.residues}

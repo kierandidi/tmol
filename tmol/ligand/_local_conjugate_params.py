@@ -37,7 +37,7 @@ class LocalConjugateParameters:
 class ConjugateParameters:
     residues: tuple[LocalConjugateParameters, ...]
     connections: tuple[ConnectionCartRes, ...]
-    charge_model: str = "curated-baseline-plus-mmff94-delta-v1"
+    charge_model: str = "conserved-patched-residue-v1"
 
 
 def _disconnected_model(model):
@@ -181,7 +181,7 @@ def _correct_bonded(
     baseline,
     rosetta,
     *,
-    parameter_source="mmff94-harmonic",
+    parameter_source,
 ):
     free_mol, free_props, _ = before
     conversion = connection.MMFF_HARMONIC_CONVERSION
@@ -405,7 +405,7 @@ def _correct_icoors(rt, mol, props, mapping, neighbors, atoms, bonded, baseline)
 
 
 def generate_conjugate_parameters(
-    atom_array, parameter_database, *, ph=7.4, parameter_source="mmff94-harmonic"
+    atom_array, parameter_database, *, ph=7.4, parameter_source="generator-ideals"
 ):
     """Generate consistent local and connection parameters, without installing.
 
