@@ -863,7 +863,11 @@ def _extract_residue_metadata(
     # Residue labels are not chain identities. Biotite's get_chain_starts also
     # splits whenever res_id decreases, turning a reversed chain into one chain
     # per residue. Work at residue granularity and retain explicit symmetry IDs.
+    # Author chain labels can be shared by a polymer and separate ligand
+    # entities. That must not hide the polymer's terminal boundary.
     keys = ["chain_id"]
+    if "label_entity_id" in biotite_structure.get_annotation_categories():
+        keys.append("label_entity_id")
     if "sym_id" in biotite_structure.get_annotation_categories():
         keys.append("sym_id")
     boundaries = numpy.zeros(max(0, len(biotite_residue_starts) - 1), dtype=bool)

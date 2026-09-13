@@ -37,6 +37,16 @@ def test_single_atom_plp_backbone_packs_and_preserves_chirality(
     # Missing sidechain atoms trigger packing and fingerprint the PLP cap.
     assert np.isnan(array.coord).any()
     pose = pose_stack_from_biotite(array, torch_device, context=context, no_optH=True)
+    # The author chain A also names the separate ligand entities. The protein
+    # still ends at histidine and needs its terminal oxygen through both readers.
+    assert (
+        sum(
+            pose.packed_block_types.active_block_types[int(i)].name == "HIS:cterm"
+            for i in pose.block_type_ind[0]
+            if i >= 0
+        )
+        == 1
+    )
     starts = struc.get_residue_starts(array, add_exclusive_stop=True)
     resolved = np.array(
         [np.isfinite(array.coord[a:b]).any() for a, b in zip(starts[:-1], starts[1:])]
