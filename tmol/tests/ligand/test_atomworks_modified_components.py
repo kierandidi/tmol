@@ -4,12 +4,18 @@ from pathlib import Path
 
 import biotite.structure as struc
 import numpy as np
+import pytest
 import torch
 
-from tmol.io import atom_array_from_cif, build_context_from_biotite
+from tmol.io import (
+    atom_array_from_cif,
+    build_context_from_biotite,
+    pose_stack_from_biotite,
+)
 from tmol.ligand import chem_comp_types_from_cif
 from tmol.ligand._registry import _applied_patch
 from tmol.score.elec._params import ElecParamResolver
+from tmol.tests.io.test_atomworks_corpus_regressions import _score_and_minimize
 
 DATA = Path(__file__).parents[1] / "data" / "atomworks_regressions"
 
@@ -40,11 +46,21 @@ def test_aromatic_acyl_cap_keeps_every_heavy_atom_in_its_tree():
     assert np.isfinite(residue.compute_ideal_coords()).all()
 
 
-def test_plp_lysine_termini_do_not_borrow_nucleotide_patch_identity():
+@pytest.mark.parametrize("reader", ["tmol", "atomworks"])
+def test_plp_enzyme_completion_preserves_residues_and_terminal_chemistry(
+    reader, torch_device
+):
     path = DATA / "plp_enzyme_7mkv.cif"
+    array = atom_array_from_cif(path, reader=reader)
+    starts = struc.get_residue_starts(array)
+    terminal_arg = (array.chain_id == "B") & (array.res_id == 437)
+    assert terminal_arg[starts].sum() == 1
+    assert {"N", "CA", "C", "O", "CB", "CG", "CD", "NE", "CZ", "NH1", "NH2"} <= set(
+        array.atom_name[terminal_arg]
+    )
     context = build_context_from_biotite(
-        atom_array_from_cif(path),
-        torch.device("cpu"),
+        array,
+        torch_device,
         prepare_ligands=True,
         ligand_seed=20260909,
         chem_comp_types=chem_comp_types_from_cif(path),
@@ -61,7 +77,9 @@ def test_plp_lysine_termini_do_not_borrow_nucleotide_patch_identity():
         if q.res == "LLP:cterm"
     }
     assert np.isfinite(charges["OXT"])
-    resolver = ElecParamResolver.from_database(db.scoring.elec, torch.device("cpu"))
+    resolver = ElecParamResolver.from_database(db.scoring.elec, torch_device)
     for residue in context.restype_set.residue_types:
         if residue.name.split(":")[0] == "LLP":
             assert np.isfinite(resolver.get_partial_charges_for_block(residue)).all()
+    pose = pose_stack_from_biotite(array, torch_device, context=context, no_optH=True)
+    _score_and_minimize(pose, context)
