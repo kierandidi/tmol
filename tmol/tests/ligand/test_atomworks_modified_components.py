@@ -129,7 +129,18 @@ def test_missing_ligand_carbon_reconstructs_and_backpropagates(reader, torch_dev
     )
     args = list(canonical)
     source = canonical.coords.clone().requires_grad_()
-    targets = [residue.atom_to_idx[name] for name in ("C6", "HC4", "HC5", "HC6")]
+    carbon = residue.atom_to_idx["C6"]
+    hydrogen_types = {
+        t.name
+        for t in context.parameter_database.chemical.atom_types
+        if t.element == "H"
+    }
+    targets = [carbon] + [
+        int(j)
+        for i, j in residue.bond_indices
+        if i == carbon and residue.atoms[j].atom_type in hydrogen_types
+    ]
+    assert len(targets) == 4
 
     def rebuild(coords):
         args[2] = coords
@@ -139,6 +150,36 @@ def test_missing_ligand_carbon_reconstructs_and_backpropagates(reader, torch_dev
 
     rebuilt = rebuild(source)
     assert torch.isfinite(rebuilt.coords[rebuilt.real_atoms]).all()
+    # Fresh preparation must agree across readers, atom order and bond order.
+    other_reader = "atomworks" if reader == "tmol" else "tmol"
+    other = atom_array_from_cif(
+        DATA / "missing_ligand_carbon_5hs6.cif.gz", reader=other_reader
+    )
+    other = other[other.res_name == "J3Z"][::-1]
+    other.bonds = struc.BondList(len(other), other.bonds.as_array()[::-1])
+    fresh = pose_stack_from_biotite(
+        other,
+        torch_device,
+        prepare_ligands=True,
+        ligand_seed=20260909,
+        no_optH=True,
+    )
+    torch.testing.assert_close(fresh.coords, rebuilt.coords, rtol=0, atol=0)
+
+    from atomworks.io.tools.rdkit import atom_array_to_rdkit
+    from rdkit import Chem
+
+    complete = ligand.copy()
+    complete.coord = (
+        rebuilt.coords[0, [residue.atom_to_idx[name] for name in ligand.atom_name]]
+        .detach()
+        .cpu()
+        .numpy()
+    )
+    molecule = atom_array_to_rdkit(complete)
+    assert {
+        complete.atom_name[i]: code for i, code in Chem.FindMolChiralCenters(molecule)
+    } == {"C2": "S", "C5": "S", "C10": "S", "C12": "R"}
     torch.testing.assert_close(
         rebuilt.coords[0, indices],
         torch.as_tensor(ligand.coord[observed], device=torch_device),

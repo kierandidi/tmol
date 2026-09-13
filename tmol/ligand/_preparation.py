@@ -740,8 +740,18 @@ def _prepare_ligand_via_smiles(
     Raises:
         ValueError: If a SMILES could not be derived or prepared.
     """
+    # Source-index atom maps must not change the seeded conformer when readers
+    # or callers order the same named atoms differently.
+    array = ligand_info.atom_array[np.argsort(ligand_info.atom_array.atom_name)]
+    ligand_info = attr.evolve(
+        ligand_info,
+        atom_array=array,
+        atom_names=tuple(array.atom_name),
+        elements=tuple(array.element),
+        coords=array.coord,
+    )
     smiles = ligand_smiles_from_atom_array(
-        ligand_info.atom_array, res_name=ligand_info.res_name, with_atom_map=True
+        array, res_name=ligand_info.res_name, with_atom_map=True
     )
 
     try:
