@@ -254,10 +254,11 @@ shared additions once in the returned preparation list; inject the whole list to
 restore the bundle. Adding the bundle after its source ligand has already been
 registered still installs its attachment metadata. Numeric internal coordinates
 and bond order in the definition are preserved during export.
-The writer emits format version 2.0 for attachment metadata, or 3.0 when atoms
-(including patch atoms) contain an explicit `genbonded_type` reference. Older
-readers reject these versions rather than silently dropping chemistry. This
-reader accepts versions 1–3; it cannot recover metadata an older writer omitted.
+The writer uses version 2.0 for attachment metadata, 3.0 for explicit
+`genbonded_type` references, 4.0 for guarded residue replacements, and 5.0 for
+explicit atom-type elements. This reader accepts versions 1–5. Older readers
+reject unsupported versions rather than silently dropping chemistry; metadata
+omitted by an older writer cannot be recovered.
 
 An atom's optional `genbonded_type` controls only generic bonded parameter lookup.
 Its `atom_type` still controls nonbonded typing and the generic term’s ownership
@@ -268,8 +269,12 @@ appropriate generic lookup types without transferring their canonical torsions
 to the generic term. Rosetta `.params` export rejects these references because
 that format cannot preserve them.
 
-Persisting explicit connection records does not generate them: automatic bonded
-parameter generation for conjugates is still under development.
+Preparation generates missing attachment bond/angle records from the conformer
+generator's ideal targets, using the ordinary ligand constants (`K=300` for
+bonds and `K=80` for angles). Supplied connection records take precedence.
+Coupled local atom types, bonded terms and construction corrections can be
+installed through guarded replacement bundles; preparation does not yet install
+those local corrections automatically.
 
 An exact patched name in `cartbonded.residue_params`, such as `LYS:conj_NZ`,
 supplies a complete `CartRes` replacement for that type; other forms of lysine
