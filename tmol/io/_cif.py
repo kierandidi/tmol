@@ -153,6 +153,7 @@ def atom_array_from_cif(
     cif_path,
     *,
     model: int = 1,
+    assembly_id: str | None = None,
     use_ccd: bool = True,
     include_bonds: bool = True,
     extra_fields=None,
@@ -169,6 +170,10 @@ def atom_array_from_cif(
     Args:
         cif_path: Path to an mmCIF file.
         model: Which model to read.
+        assembly_id: Biological assembly ID, or None for the asymmetric unit.
+            AtomWorks applies the file's assembly operations. Assembly chain IDs
+            identify each label-chain/transformation instance on both readers;
+            the author reader also retains ``auth_asym_id``. Requires bonds.
         use_ccd: Whether the component dictionary may say which atoms a residue
             has, for a component the file declares no chemistry for. False for
             a source whose residue codes mean nothing outside it, since the
@@ -193,6 +198,11 @@ def atom_array_from_cif(
     Returns:
         A biotite AtomArray.
     """
+    if assembly_id is not None:
+        if not isinstance(assembly_id, str) or not assembly_id:
+            raise ValueError("assembly_id must be a nonempty string or None")
+        if not include_bonds:
+            raise ValueError("Assembly reading requires include_bonds=True")
     if reader == "atomworks":
         if not use_ccd or not include_bonds or extra_fields:
             raise ValueError(
@@ -201,7 +211,12 @@ def atom_array_from_cif(
             )
         from tmol.io._atomworks_reader import read_cif
 
-        return read_cif(cif_path, model=model, hydrogen_policy=hydrogen_policy)[0]
+        return read_cif(
+            cif_path,
+            model=model,
+            assembly_id=assembly_id,
+            hydrogen_policy=hydrogen_policy,
+        )[0]
     if reader != "tmol":
         raise ValueError(f"Unknown CIF reader {reader!r}; choose 'tmol' or 'atomworks'")
     if include_bonds:
@@ -210,6 +225,7 @@ def atom_array_from_cif(
         array, block = read_cif(
             cif_path,
             model=model,
+            assembly_id=assembly_id,
             author_fields=True,
             extra_fields=extra_fields,
             hydrogen_policy=hydrogen_policy,
@@ -445,6 +461,8 @@ def pose_stack_from_cif(
     cif_path,
     device,
     *,
+    model: int = 1,
+    assembly_id: str | None = None,
     use_ccd: bool = True,
     reader: str = "tmol",
     hydrogen_policy: str = "rebuild",
@@ -460,7 +478,12 @@ def pose_stack_from_cif(
     from tmol.io._pose_stack_from_biotite import pose_stack_from_biotite
 
     array = atom_array_from_cif(
-        cif_path, use_ccd=use_ccd, reader=reader, hydrogen_policy=hydrogen_policy
+        cif_path,
+        model=model,
+        assembly_id=assembly_id,
+        use_ccd=use_ccd,
+        reader=reader,
+        hydrogen_policy=hydrogen_policy,
     )
     return pose_stack_from_biotite(
         array,

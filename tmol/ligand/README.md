@@ -40,15 +40,21 @@ To detect and prepare **every** non-standard residue in a structure at once
 `AtomArray` is a biotite structure loaded from a CIF or PDB file:
 
 ```python
-import biotite.structure.io
+from tmol.io import atom_array_from_cif
 from tmol.ligand import prepare_ligands
 
-atom_array = biotite.structure.io.load_structure("complex.cif")
-if hasattr(atom_array, "__len__") and len(atom_array) > 1:
-    atom_array = atom_array[0]  # first model of a multi-model file
-
+atom_array = atom_array_from_cif("complex.cif", reader="atomworks", model=1)
 param_db, co = prepare_ligands(atom_array, ph=7.4)
 ```
+
+File reading retains unresolved atoms at NaN. To select a biological assembly,
+pass its ID, for example `assembly_id="1"`, to `atom_array_from_cif` or
+`pose_stack_from_cif`. The default is the asymmetric unit, which can contain
+overlapping alternative assemblies (145D is one example). AtomWorks applies the
+declared transforms; both readers use distinct chain-instance IDs for assembly
+copies. Direct AtomWorks arrays carrying `chain_iid` use the same identities
+in `build_context_from_biotite` and `pose_stack_from_biotite` without mutating
+the supplied array.
 
 **On PDB inputs:** tmol accepts PDB for structures generally, but PDB does not
 carry reliable bond orders. Deriving ligand parameters requires an input that
@@ -61,8 +67,8 @@ the ligand from one of those formats even when the rest of the complex is a PDB.
 - Build the score function from the **ligand-extended** database
   (`beta2016_score_function(device, param_db=context.parameter_database)`),
   not the default database. A freshly prepared ligand block type has no
-  scoring parameters in the default database, so scoring against it silently
-  contributes nothing.
+  scoring parameters in the default database; missing used atom types or
+  charges are rejected during scoring setup.
 
 ## User-defined ligand fragmentation
 

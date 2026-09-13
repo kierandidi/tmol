@@ -22,6 +22,18 @@ from tmol.utility.weak_identity_cache import WeakIdentityLRU
 
 logger = logging.getLogger(__name__)
 
+# Synthetic backbone/cap atoms remain part of the same residue instance.
+_RESIDUE_IDENTITY = (
+    "res_name",
+    "chain_id",
+    "res_id",
+    "hetero",
+    "ins_code",
+    "sym_id",
+    "transformation_id",
+    "chain_iid",
+)
+
 
 @attr.s(auto_attribs=True, frozen=True, slots=True)
 class CapAtom:
@@ -1319,7 +1331,7 @@ def cap_residue(atom_array, profile: PolymerProfile, *, include_coordinates=True
             out.coord[n_residue + offset] = pos[cap_names[cap.name]]
         out.atom_name[n_residue + offset] = cap_names[cap.name]
         out.element[n_residue + offset] = cap.element
-    for field in ("res_name", "chain_id", "res_id", "hetero", "ins_code"):
+    for field in _RESIDUE_IDENTITY:
         if field in atom_array.get_annotation_categories():
             value = getattr(atom_array, field)[0]
             getattr(out, field)[n_residue:] = value
@@ -1746,9 +1758,12 @@ def complete_backbone_from_reference(atom_array, profile, param_db):
         added.coord[i] = coords[name] @ rotation.T + offset
         added.atom_name[i] = name
         added.element[i] = _element_of(donor_type, name)
-    for field in ("res_name", "chain_id", "res_id", "hetero"):
+    for field in _RESIDUE_IDENTITY:
         if field in atom_array.get_annotation_categories():
-            getattr(added, field)[:] = getattr(atom_array, field)[0]
+            source = atom_array.get_annotation(field)
+            added.set_annotation(
+                field, numpy.full(len(added), source[0], dtype=source.dtype)
+            )
 
     combined = atom_array + added
     index = {str(n): i for i, n in enumerate(combined.atom_name)}

@@ -93,7 +93,7 @@ def build_context_from_biotite(
     # aliased names are resolved before ligand detection, or the residue the
     #    alias points at would be prepared as a nonstandard one
     chemdb = (param_db or ParameterDatabase.get_default()).chemical
-    biotite_structure = _resolve_aliased_res_names(
+    biotite_structure = _normalize_input_identifiers(
         biotite_structure,
         {alias.name3: alias.read_as for alias in chemdb.name3_aliases},
     )
@@ -977,20 +977,29 @@ def _populate_optional_atom_metadata(
 
 
 @validate_args
-def _resolve_aliased_res_names(biotite_structure, name3_aliases):
-    """A copy of the structure with aliased residue names rewritten.
+def _normalize_input_identifiers(biotite_structure, name3_aliases):
+    """Resolve residue aliases and AtomWorks assembly instances without mutation.
 
     An aliased residue is read as the one it names, so nothing downstream --
     atom mapping, restype lookup, nonstandard-residue detection -- ever sees
     the input name. Atom names follow through the target's atom aliases.
     """
-    if not name3_aliases:
-        return biotite_structure
+    from atomworks.io.utils.atom_array import chain_identifier
+
+    chains = chain_identifier(biotite_structure)
     names = biotite_structure.res_name
-    if not any(name in name3_aliases for name in numpy.unique(names)):
+    rename_residues = bool(name3_aliases) and any(
+        name in name3_aliases for name in numpy.unique(names)
+    )
+    if not rename_residues and (
+        chains is biotite_structure.chain_id
+        or numpy.array_equal(chains, biotite_structure.chain_id)
+    ):
         return biotite_structure
     renamed = biotite_structure.copy()
-    renamed.res_name = numpy.array([name3_aliases.get(n, n) for n in names])
+    renamed.chain_id = chains.copy()
+    if rename_residues:
+        renamed.res_name = numpy.array([name3_aliases.get(n, n) for n in names])
     return renamed
 
 
@@ -1034,7 +1043,9 @@ def canonical_form_from_biotite(
     if co is None:
         co = canonical_ordering_for_biotite()
 
-    biotite_structure = _resolve_aliased_res_names(biotite_structure, co.name3_aliases)
+    biotite_structure = _normalize_input_identifiers(
+        biotite_structure, co.name3_aliases
+    )
     biotite_structure, not_connected = _filter_supported_atoms_and_connectivity(
         biotite_structure, co
     )

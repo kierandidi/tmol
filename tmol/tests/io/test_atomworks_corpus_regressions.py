@@ -62,29 +62,97 @@ def test_af3_cyclic_peptide_resolves_leaving_atoms_and_minimizes(reader, torch_d
     _score_and_minimize(pose, context)
 
 
-def test_terminal_nucleoside_keeps_its_backbone_and_minimizes(torch_device):
+@pytest.mark.parametrize("reader", ["tmol", "atomworks"])
+@pytest.mark.parametrize("assembly_id", [None, "1", "2", "copies"])
+def test_terminal_nucleoside_keeps_its_backbone_and_minimizes(
+    torch_device, reader, assembly_id, tmp_path
+):
+    path = DATA / "terminal_nucleotide_145d.cif"
+    if assembly_id == "copies":
+        # Two separated copies exercise instance identity and coordinate transforms.
+        cif = pdbx.CIFFile.read(path)
+        operations = cif.block["pdbx_struct_oper_list"]
+        columns = {
+            name: np.repeat(operations[name].as_array(str), 2) for name in operations
+        }
+        columns["id"] = ["1", "2"]
+        columns["vector[1]"] = ["0", "40"]
+        cif.block["pdbx_struct_oper_list"] = pdbx.CIFCategory(columns)
+        cif.block["pdbx_struct_assembly_gen"] = pdbx.CIFCategory(
+            {
+                "assembly_id": ["copies"],
+                "oper_expression": ["(1,2)"],
+                "asym_id_list": ["A"],
+            }
+        )
+        path = tmp_path / "copies.cif"
+        cif.write(path)
     pose, context = pose_stack_from_cif(
-        DATA / "terminal_nucleotide_145d.cif",
+        path,
         torch_device,
+        reader=reader,
+        assembly_id=assembly_id,
         prepare_ligands=True,
         ligand_seed=20260909,
         no_optH=True,
         return_context=True,
     )
-    assert int((pose.block_type_ind >= 0).sum()) == 24
+    blocks = 24 if assembly_id is None else 12
+    assert int((pose.block_type_ind >= 0).sum()) == blocks
     types = [
         pose.packed_block_types.active_block_types[int(i)]
         for i in pose.block_type_ind[0]
     ]
     assert all(bt.properties.polymer.backbone_type == "dna" for bt in types)
     assert types[0].name == "MCY:na5prime"
-    # Four six-residue strands: proximity between strands adds no conjugations.
-    assert int((pose.inter_residue_connections[..., 0] >= 0).sum()) == 40
+    # Each strand has six residues; proximity adds no conjugations.
+    assert int((pose.inter_residue_connections[..., 0] >= 0).sum()) == blocks // 6 * 10
     assert not any("conj_" in bt.name for bt in types)
-    _score_and_minimize(pose, context)
+    array = atom_array_from_cif(path, reader=reader, assembly_id=assembly_id)
+    array = array[array.res_name != "HOH"]
+    _assert_all_source_connections(pose, array)
+    if assembly_id == "copies":
+        for chain in ("A",):
+            first = array[array.chain_iid == f"{chain}_1"]
+            second = array[array.chain_iid == f"{chain}_2"]
+            np.testing.assert_array_equal(first.atom_name, second.atom_name)
+            np.testing.assert_allclose(
+                second.coord, first.coord + [40, 0, 0], atol=1e-5
+            )
+        # Direct AtomWorks arrays keep the original chain labels alongside IIDs.
+        array.chain_id = np.array([name.split("_")[0] for name in array.chain_iid])
+        original_chains = array.chain_id.copy()
+        canonical = canonical_form_from_biotite(
+            array, torch_device, co=context.canonical_ordering
+        )
+        assert torch.unique(canonical.chain_id).numel() == 2
+        direct = pose_stack_from_biotite(
+            array, torch_device, context=context, no_optH=True
+        )
+        np.testing.assert_array_equal(array.chain_id, original_chains)
+        torch.testing.assert_close(direct.block_type_ind, pose.block_type_ind)
+        torch.testing.assert_close(
+            direct.inter_residue_connections, pose.inter_residue_connections
+        )
+        torch.testing.assert_close(direct.coords, pose.coords)
+    _, minimized = _score_and_minimize(pose, context, max_iter=100)
+    if assembly_id is not None:
+        # Selecting an assembly removes the alternative duplex's severe overlaps.
+        # Its phosphodiester bonds must remain intact after unconstrained relaxation.
+        offsets = pose.block_coord_offset[0].tolist()
+        for block, row in enumerate(pose.inter_residue_connections[0].tolist()):
+            for conn, (partner, port) in enumerate(row):
+                if partner <= block:
+                    continue
+                a = offsets[block] + int(types[block].ordered_connection_atoms[conn])
+                b = offsets[partner] + int(
+                    types[partner].ordered_connection_atoms[port]
+                )
+                length = (minimized.coords[0, a] - minimized.coords[0, b]).norm()
+                assert 1.3 < float(length) < 2.0
 
 
-def _score_and_minimize(pose, context):
+def _score_and_minimize(pose, context, max_iter=10):
     from tmol.optimization import CartesianSfxnNetwork, LBFGS_Armijo
 
     assert torch.isfinite(pose.coords[pose.real_atoms]).all()
@@ -92,7 +160,7 @@ def _score_and_minimize(pose, context):
     network = CartesianSfxnNetwork(score, pose)
     initial = network().detach()
     optimizer = LBFGS_Armijo(
-        network.parameters(), max_iter=10, segment_ids=network.segment_ids
+        network.parameters(), max_iter=max_iter, segment_ids=network.segment_ids
     )
 
     def closure():
@@ -105,7 +173,7 @@ def _score_and_minimize(pose, context):
 
     optimizer.step(closure)
     assert torch.all(closure().detach() < initial)
-    return initial
+    return initial, network.pose_stack_from_dofs()
 
 
 @pytest.mark.parametrize("reader", ["tmol", "atomworks"])
@@ -134,7 +202,7 @@ def test_macrocycle_preserves_every_bond_across_residue_order(reader, torch_devi
             array[indices], torch_device, context=context, no_optH=True
         )
         _assert_all_source_connections(pose, array[indices])
-        energies.append(_score_and_minimize(pose, context))
+        energies.append(_score_and_minimize(pose, context)[0])
     torch.testing.assert_close(energies[0], energies[1], atol=0.002, rtol=1e-5)
 
 
@@ -245,7 +313,7 @@ def test_repeated_glycans_share_transferable_attachment_targets(reader, torch_de
                 ]
             )
         )
-        energies.append(_score_and_minimize(pose, context))
+        energies.append(_score_and_minimize(pose, context)[0])
     assert identities[0] == identities[1]
     torch.testing.assert_close(coordinates[0], coordinates[1], atol=1e-4, rtol=0)
     torch.testing.assert_close(energies[0], energies[1], atol=0.002, rtol=1e-5)

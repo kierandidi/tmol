@@ -30,6 +30,12 @@ def test_caps_preserve_retained_annotations_and_topology(code):
         "source_chemistry", np.array([f"atom_{i}_tag" for i in range(len(source))])
     )
     source.ins_code[:] = "B"
+    for field, value in (
+        ("sym_id", 7),
+        ("transformation_id", "2_3"),
+        ("chain_iid", "A_2_3"),
+    ):
+        source.set_annotation(field, np.full(len(source), value))
     before = source.copy()
     capped, caps = cap_residue(source, profile)
     topology, topology_caps = cap_residue(source, profile, include_coordinates=False)
@@ -54,6 +60,8 @@ def test_caps_preserve_retained_annotations_and_topology(code):
     assert np.all(capped.charge[cap_indices] == 0)
     assert np.all(capped.source_chemistry[cap_indices] == "")
     assert np.all(capped.ins_code == "B")
+    for field in ("sym_id", "transformation_id", "chain_iid"):
+        assert np.all(capped.get_annotation(field) == source.get_annotation(field)[0])
 
 
 def test_topology_only_caps_do_not_construct_frames(monkeypatch):
