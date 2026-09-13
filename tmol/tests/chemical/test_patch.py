@@ -774,8 +774,7 @@ def test_terminal_and_conjugation_patches_preserve_torsion_support_in_either_ord
     from tmol.ligand._registry import inject_ligand_preparations
 
     path = (
-        Path(__file__).parents[3]
-        / "review/pr503/fixtures/noncanonical-score-replay/dna-0.tmol"
+        Path(__file__).parents[1] / "data/ligand_params/5cm_patch_composition.tmol"
     )
     (prep,) = _load_params_files([str(path)])
     db = inject_ligand_preparations(ParameterDatabase.get_default(), [prep])
