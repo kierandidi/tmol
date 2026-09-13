@@ -3,8 +3,9 @@
 A glycan's link to its protein, or a ligand's to a sidechain, is a bond the
 residue types know nothing about: serine declares no connection at OG, and a
 sugar declares none at its hydroxyls. Each attachment site becomes a patch that
-removes the hydrogen standing in the bond's place and puts a connection there,
-so a residue linked at several sites is the combination of its patches.
+removes displaced hydrogens and adds a connection, so a residue linked at several
+sites is the combination of its patches. A site with available valence can also
+attach without losing hydrogen.
 
 Patches name atoms outright rather than matching a pattern: a pattern cannot
 tell one hydroxyl of a sugar from another. They are therefore scoped to the one
@@ -13,11 +14,13 @@ residue type they were generated for.
 
 import attr
 import networkx
+import numpy as np
 
 from tmol.database.chemical import (
     Atom,
     ChiSamples,
     Connection,
+    Icoor,
     IcoorVariant,
     Torsion,
     UnresolvedAtom,
@@ -91,7 +94,7 @@ def leaving_atoms(residue_type, atom: str, chemdb, n_leaving: int = 1):
     if not candidates:
         return None
     removed = []
-    for _ in range(max(min(n_leaving, len(candidates)), 1)):
+    for _ in range(max(min(n_leaving, len(candidates)), 0)):
         remaining = [h for h in candidates if h not in removed]
         if not remaining:
             break
@@ -108,6 +111,59 @@ def leaving_atom(residue_type, atom: str, chemdb) -> str:
 
 def _icoor_for(residue_type, name):
     return next((ic for ic in residue_type.icoors if ic.name == name), None)
+
+
+def _open_valence_frame(residue_type, atom, chemdb, distance):
+    """A connection direction from the prepared geometry when no H leaves.
+
+    Two neighbors or a pyramidal three-neighbor center define an open vertex.
+    A planar three-neighbor center has no unique side to attach to. The local
+    conjugate correction installs the generator's bonded-state length and
+    angle targets, just as it does for connections inherited from hydrogen.
+    """
+    from tmol.ligand._fragmentation import _full_ideal_coords, _angle, _dihedral
+
+    element = _element_for_atom(residue_type, chemdb)
+    neighbors = sorted(
+        {
+            other
+            for first, second, *_ in residue_type.bonds
+            for this, other in ((first, second), (second, first))
+            if this == atom
+        },
+        key=lambda name: (element[name] == "H", name),
+    )
+    if len(neighbors) not in (2, 3):
+        raise ValueError(
+            f"No unambiguous open attachment frame at {residue_type.name}.{atom}"
+        )
+    xyz = _full_ideal_coords(residue_type)
+    vectors = np.stack([xyz[n] - xyz[atom] for n in neighbors])
+    lengths = np.linalg.norm(vectors, axis=-1)
+    if not np.isfinite(lengths).all() or (lengths < 1e-8).any():
+        raise ValueError(f"Degenerate attachment frame at {residue_type.name}.{atom}")
+    unit = vectors / lengths[:, None]
+    direction = -unit.sum(axis=0)
+    norm = np.linalg.norm(direction)
+    if (
+        norm < 1e-6
+        or np.linalg.norm(np.cross(unit[0], unit[1])) < 1e-6
+        or (len(neighbors) == 3 and abs(np.linalg.det(unit)) < 1e-4)
+    ):
+        raise ValueError(
+            f"No unoccupied attachment direction at {residue_type.name}.{atom}"
+        )
+    gp, ggp = neighbors[:2]
+    remote = xyz[atom] + direction / norm
+    return Icoor(
+        name=connection_name(atom),
+        parent=atom,
+        grand_parent=gp,
+        great_grand_parent=ggp,
+        phi=-_dihedral(remote, xyz[atom], xyz[gp], xyz[ggp]),
+        theta=np.pi - _angle(remote, xyz[atom], xyz[gp]),
+        d=float(distance if distance is not None else lengths.mean()),
+    )
 
 
 def _linkage_torsion(name, frame, atom, chi_name, across_connection=False):
@@ -154,7 +210,7 @@ def conjugation_patch(
     n_hydrogens=None,
     bond_type="SINGLE",
 ):
-    """A patch replacing an atom's hydrogens with a connection, or None.
+    """A patch adding an attachment and removing only displaced hydrogens.
 
     The connection inherits the first hydrogen's internal coordinates, which
     already point along the bond; only the length differs, and the caller
@@ -167,9 +223,11 @@ def conjugation_patch(
     the partner already is.
     """
     present = _hydrogens_on(residue_type, atom, chemdb)
-    n_leaving = 1 if n_hydrogens is None else max(len(present) - n_hydrogens, 1)
-    leaving_all = leaving_atoms(residue_type, atom, chemdb, n_leaving)
-    if not leaving_all:
+    n_leaving = 1 if n_hydrogens is None else len(present) - n_hydrogens
+    if n_leaving < 0:
+        raise ValueError(f"Attachment adds hydrogens at {residue_type.name}.{atom}")
+    leaving_all = leaving_atoms(residue_type, atom, chemdb, n_leaving) or ()
+    if not leaving_all and n_hydrogens is None:
         return None
     # the connection takes a departing hydrogen's frame, so it has to be one
     #    framed on atoms that stay: the hydrogens are built one against the
@@ -183,9 +241,14 @@ def conjugation_patch(
         )
 
     leaving = next(
-        (name for name in reversed(leaving_all) if _survives(name)), leaving_all[-1]
+        (name for name in reversed(leaving_all) if _survives(name)),
+        leaving_all[-1] if leaving_all else None,
     )
-    frame = _icoor_for(residue_type, leaving)
+    frame = (
+        _icoor_for(residue_type, leaving)
+        if leaving is not None
+        else _open_valence_frame(residue_type, atom, chemdb, distance)
+    )
     if frame is None:
         return None
 
@@ -196,10 +259,22 @@ def conjugation_patch(
     current = next(a.atom_type for a in residue_type.atoms if a.name == atom)
     becomes = conjugated.get(current)
     modify_atoms = (Atom(name=f"<{atom}>", atom_type=becomes),) if becomes else ()
-    # the connection takes the departing hydrogen's frame outright, which
-    #    already points along the bond; only the length differs. An omitted
-    #    field is inherited from the source, so pass nothing else.
-    icoors = (IcoorVariant(name=name, source=f"<{leaving}>", d=distance),)
+    # Inherit a departing H's frame, or provide the open-valence frame explicitly.
+    icoors = (
+        (
+            IcoorVariant(name=name, source=f"<{leaving}>", d=distance)
+            if leaving is not None
+            else IcoorVariant(
+                name=name,
+                phi=frame.phi,
+                theta=frame.theta,
+                d=frame.d,
+                parent=f"<{frame.parent}>",
+                grand_parent=f"<{frame.grand_parent}>",
+                great_grand_parent=f"<{frame.great_grand_parent}>",
+            )
+        ),
+    )
 
     torsions, chi_samples = (), ()
     if chi_name is not None and frame.grand_parent and frame.great_grand_parent:
@@ -257,7 +332,7 @@ def conjugation_patch(
 def conjugation_patches(
     residue_type, atoms, chemdb, distances=None, hydrogens=None, bond_types=None
 ):
-    """One patch per attachment site, skipping sites with nothing to displace.
+    """One patch per attachment site, using the supplied bonded hydrogen count.
 
     Each site's torsion gets a chi number past every one the residue already
     uses, and past the other sites': two patches can apply at once, and a
@@ -311,7 +386,7 @@ def conjugation_charge_entries(
     for atom in sorted(atoms):
         present = _hydrogens_on(residue_type, atom, chemdb)
         wanted = (hydrogens or {}).get(atom)
-        n_leaving = 1 if wanted is None else max(len(present) - wanted, 1)
+        n_leaving = 1 if wanted is None else max(len(present) - wanted, 0)
         leaving = leaving_atoms(residue_type, atom, chemdb, n_leaving)
         if not leaving:
             continue

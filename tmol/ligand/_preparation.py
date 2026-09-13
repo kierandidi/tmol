@@ -841,6 +841,40 @@ def conjugation_atoms(lig, polymer_ports):
     return frozenset(conjugations)
 
 
+def _retain_polymer_connected_ports(ports, ligands):
+    """A terminal-cap profile needs a polymer partner to define a backbone.
+
+    Two linked small molecules can each fit a one-port cap profile. Without a
+    declared or chemically complete backbone, their bond is a conjugation.
+    """
+    neighbors = {name: set() for name in ports}
+    members = {
+        name
+        for name, atoms in ports.items()
+        if atoms
+        and (
+            name not in ligands
+            or ligands[name].in_polymer_entity
+            or is_polymer_linking_component_type(ligands[name].component_type)
+            or len(atoms) > 1
+        )
+    }
+    for name, lig in ligands.items():
+        for atom, partners in (lig.connection_partners or {}).items():
+            for partner, other_atom in partners:
+                if atom in ports[name] and other_atom in ports[partner]:
+                    neighbors[name].add(partner)
+                    neighbors[partner].add(name)
+    pending = list(members)
+    while pending:
+        for partner in neighbors[pending.pop()] - members:
+            members.add(partner)
+            pending.append(partner)
+    return {
+        name: atoms if name in members else frozenset() for name, atoms in ports.items()
+    }
+
+
 def _bond_lengths_by_site(atom_array):
     """Finite, positive measurements of declared cross-residue bonds.
 
@@ -1315,6 +1349,7 @@ def prepare_ligands(  # noqa: C901
         )
         for name in partner_names
     }
+    polymer_ports = _retain_polymer_connected_ports(polymer_ports, ligands_by_name)
     bond_lengths = _bond_lengths_by_site(atom_array)
     for lig in ligands:
         conjugations = conjugation_atoms(lig, polymer_ports)

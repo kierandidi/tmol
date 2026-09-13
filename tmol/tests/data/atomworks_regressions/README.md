@@ -81,3 +81,11 @@ regression excludes sodium and water, constructs the missing carbon and dependen
 hydrogens using prepared internal coordinates, preserves observed ligand atoms,
 and scores/minimizes the protein–ligand complex. The isolated ligand also checks
 gradients through reconstruction against finite differences.
+
+`free_and_attached_solutes_5xag.cif.gz` retains the full RCSB structure. It
+contains both free glycerol/imidazole and one declared GOL O3–IMD N3 bond.
+The test excludes free magnesium/calcium and waters, constructs the complex
+with ordinary solutes plus connected variants, then scores/minimizes it.
+Imidazole N3 has no departing hydrogen; its attachment frame comes from its
+prepared neighbor geometry and receives the connected generator targets.
+Reusing the full preparation for the free solutes must match fresh preparation.

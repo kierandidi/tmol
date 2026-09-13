@@ -21,6 +21,84 @@ DATA = Path(__file__).parents[1] / "data" / "atomworks_regressions"
 
 
 @pytest.mark.parametrize("reader", ["tmol", "atomworks"])
+def test_free_and_attached_solutes_keep_distinct_chemistry(reader, torch_device):
+    array = atom_array_from_cif(
+        DATA / "free_and_attached_solutes_5xag.cif.gz", reader=reader
+    )
+    array = array[
+        (array.res_name != "HOH") & ~np.isin(np.char.upper(array.element), ("MG", "CA"))
+    ]
+    context = build_context_from_biotite(
+        array, torch_device, prepare_ligands=True, ligand_seed=20260909
+    )
+    pose = pose_stack_from_biotite(array, torch_device, context=context, no_optH=True)
+    types = pose.packed_block_types.active_block_types
+    charges = ElecParamResolver.from_database(
+        context.parameter_database.scoring.elec, torch_device
+    )
+    attached = {}
+    for name, port in (("GOL", "conj_O3"), ("IMD", "conj_N3")):
+        blocks = [
+            (i, types[int(t)])
+            for i, t in enumerate(pose.block_type_ind[0])
+            if types[int(t)].base_name == name
+        ]
+        assert len(blocks) == int(
+            (array.res_name[struc.get_residue_starts(array)] == name).sum()
+        )
+        assert all(not bt.properties.polymer.is_polymer for _, bt in blocks)
+        linked = [(i, bt) for i, bt in blocks if bt.name != name]
+        assert len(linked) == 1
+        block, bt = linked[0]
+        assert bt.name == f"{name}:{port}"
+        base = next(t for t in types if t.name == name)
+        np.testing.assert_allclose(
+            charges.get_partial_charges_for_block(bt).sum(),
+            charges.get_partial_charges_for_block(base).sum(),
+            atol=1e-6,
+        )
+        attached[name] = (
+            block,
+            next(i for i, conn in enumerate(bt.connections) if conn.name == port),
+        )
+    block, port = attached["GOL"]
+    assert (
+        tuple(pose.inter_residue_connections[0, block, port].tolist())
+        == attached["IMD"]
+    )
+    records = [
+        r
+        for r in context.parameter_database.scoring.cartbonded.connection_params
+        if {r.block_type1, r.block_type2} == {"GOL:conj_O3", "IMD:conj_N3"}
+    ]
+    assert len(records) == 1
+    assert all(p.K == 300 for p in records[0].length_parameters)
+    assert all(p.K == 80 for p in records[0].angle_parameters)
+    _score_and_minimize(pose, context)
+
+    # A context prepared with attached copies must not change the free molecules.
+    solutes = array[np.isin(array.res_name, ("GOL", "IMD"))]
+    residues = struc.get_residue_positions(solutes, np.arange(len(solutes)))
+    bonds = solutes.bonds.as_array()[:, :2]
+    linked = residues[bonds[residues[bonds[:, 0]] != residues[bonds[:, 1]]]].flatten()
+    free = solutes[~np.isin(residues, linked)]
+    assert len(free) > 0
+    reused = pose_stack_from_biotite(free, torch_device, context=context, no_optH=True)
+    fresh, fresh_context = pose_stack_from_biotite(
+        free,
+        torch_device,
+        prepare_ligands=True,
+        ligand_seed=20260909,
+        no_optH=True,
+        return_context=True,
+    )
+    torch.testing.assert_close(reused.coords, fresh.coords)
+    reused_score, _ = _score_and_minimize(reused, context)
+    fresh_score, _ = _score_and_minimize(fresh, fresh_context)
+    torch.testing.assert_close(reused_score, fresh_score)
+
+
+@pytest.mark.parametrize("reader", ["tmol", "atomworks"])
 def test_missing_ligand_carbon_reconstructs_and_backpropagates(reader, torch_device):
     from tmol.io import canonical_form_from_biotite, pose_stack_from_canonical_form
 

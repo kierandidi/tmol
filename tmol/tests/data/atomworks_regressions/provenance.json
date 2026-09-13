@@ -140,5 +140,13 @@
     "transformation": "none; complete compressed mirror entry",
     "sha256": "7d5fd61372fc37d081e6283716325a2ddb02185ada6feb76ce2bc00970620fe6",
     "bytes": 116464
+  },
+  {
+    "fixture": "free_and_attached_solutes_5xag.cif.gz",
+    "source": "https://files.rcsb.org/download/5XAG.cif.gz",
+    "source_repository": "RCSB PDB; used by AtomWorks IO tests",
+    "transformation": "none; complete compressed mirror entry",
+    "sha256": "908e190519baab5f1245a6e01901d4f551b32e885ec1f46d58acf813f3c73342",
+    "bytes": 472608
   }
 ]
