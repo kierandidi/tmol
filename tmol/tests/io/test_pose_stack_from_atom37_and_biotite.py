@@ -121,9 +121,21 @@ def test_atom37_pose_supports_protein_dna_and_rna(filename, torch_device):
     assert torch.count_nonzero(atom37.grad) > 0
 
 
-@pytest.mark.parametrize("filename", ["1ubq.pdb", "1bna.pdb", "3zp8.pdb"])
-def test_prepared_atom37_builder_matches_direct_pose(filename, torch_device):
+@pytest.mark.parametrize(
+    "filename,closed",
+    [("1ubq.pdb", False), ("1bna.pdb", False), ("3zp8.pdb", False), ("1ubq.pdb", True)],
+)
+def test_prepared_atom37_builder_matches_direct_pose(filename, closed, torch_device):
     structure = _first_residues(_load_structure(data_path("pdb", filename)), 2)
+    if closed:
+        # Closing the peptide changes the terminal hydrogen complement.
+        structure = structure[structure.element != "H"]
+        structure.bonds = struc.BondList(structure.array_length())
+        structure.bonds.add_bond(
+            int(np.flatnonzero(structure.atom_name == "C")[-1]),
+            int(np.flatnonzero(structure.atom_name == "N")[0]),
+            struc.BondType.SINGLE,
+        )
     structure, atom37 = _atomized_atom37(structure, torch_device, n_poses=2)
     context = build_context_from_biotite(structure, torch_device)
 
@@ -131,6 +143,12 @@ def test_prepared_atom37_builder_matches_direct_pose(filename, torch_device):
         atom37, structure, context, no_optH=True
     )
     builder = prepare_pose_stack_from_atom37(structure, context)
+    if closed:
+        bonds = builder._canonical_form(
+            builder._canonical_coords(atom37)
+        ).covalent_bonds
+        assert bonds.shape == (2, 5)
+        assert bonds[:, 0].tolist() == [0, 1]
     actual = builder(atom37, opt_h=False)
 
     torch.testing.assert_close(actual.coords, expected.coords)
