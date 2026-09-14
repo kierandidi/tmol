@@ -11,6 +11,14 @@ from tmol.pose import (
     PoseStack,
 )
 
+# positions of the dihedral means within a packed parameter row; only these
+# flip for a mirrored residue -- the interior-angle mean is achiral
+_MIRRORED_MU_INDICES = (8, 11, 13, 16, 19)
+_MIRRORED_SIGNS = torch.ones(33)
+_MIRRORED_SIGNS[32] = -1.0  # explicit chirality for selecting the pair distribution
+for _i in _MIRRORED_MU_INDICES:
+    _MIRRORED_SIGNS[_i] = -1.0
+
 
 class DisulfideEnergyTerm(EnergyTerm):
     device: torch.device  # = attr.ib()
@@ -68,6 +76,19 @@ class DisulfideEnergyTerm(EnergyTerm):
                 disulfide_conns[i, conn] = True
 
         setattr(packed_block_types, "disulfide_conns", disulfide_conns)
+
+        # a reflected residue contributes negated dihedrals; cos is even, so
+        #    the same energy comes from negating the dihedral means instead,
+        #    which needs no correction to the derivative
+        is_mirrored = torch.tensor(
+            [
+                bt.properties.polymer.sidechain_chirality == "d"
+                for bt in packed_block_types.active_block_types
+            ],
+            dtype=torch.bool,
+            device=self.device,
+        )
+        setattr(packed_block_types, "disulfide_bt_is_mirrored", is_mirrored)
 
     def setup_poses(self, poses: PoseStack):
         super(DisulfideEnergyTerm, self).setup_poses(poses)
@@ -131,15 +152,29 @@ class DisulfideEnergyTerm(EnergyTerm):
                     self.global_params.wt_ang,
                     self.global_params.wt_len,
                     self.global_params.shift,
+                    self.global_params.dss_mixed_logA1,
+                    self.global_params.dss_mixed_kappa1,
+                    self.global_params.dss_mixed_mu1,
+                    self.global_params.dss_mixed_logA2,
+                    self.global_params.dss_mixed_kappa2,
+                    self.global_params.dss_mixed_mu2,
+                    torch.ones_like(self.global_params.shift),
                 ]
             ),
             dim=1,
         )
         pbt = pose_stack.packed_block_types
+
+        # the kernel reads one parameter row per block type so that each half
+        #    of a disulfide is scored with its own residue's parameters
+        per_block_type = global_params.expand(pbt.n_types, -1).clone()
+        per_block_type[pbt.disulfide_bt_is_mirrored, :] *= _MIRRORED_SIGNS.to(
+            per_block_type.device
+        )
         return [
             pose_stack.block_type_ind,
             pose_stack.inter_residue_connections,
             pbt.disulfide_conns,
             pbt.atom_downstream_of_conn,
-            global_params,
+            per_block_type,
         ]

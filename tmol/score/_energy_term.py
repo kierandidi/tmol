@@ -7,6 +7,7 @@ from tmol.pose import (
     PackedBlockTypes,
     PoseStack,
 )
+from tmol.pose._conjugated_groups import lockstep_group_for_block
 from tmol.score.common import (
     TermWholePoseScoringModule,
     TermBlockPairScoringModule,
@@ -210,6 +211,7 @@ class EnergyTerm:
             rotamer_set,
             self.get_rotamer_score_term_attributes(pose_stack, rotamer_set),
             f,
+            lockstep_group_for_block(pose_stack, rotamer_set),
             self.get_block_neighbor_cutoff(),
             self.accepts_shared_rotamer_dispatch(),
             self.rotamer_dispatch_key(),
