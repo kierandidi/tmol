@@ -105,7 +105,6 @@ class BondDependentTerm(EnergyTerm):
         if hasattr(pose_stack, "min_block_bondsep"):
             return
 
-        min_block_bondsep, _ = torch.min(pose_stack.inter_block_bondsep, dim=4)
-        min_block_bondsep, _ = torch.min(min_block_bondsep, dim=3)
+        min_block_bondsep = torch.amin(pose_stack.inter_block_bondsep, dim=(3, 4))
 
         setattr(pose_stack, "min_block_bondsep", min_block_bondsep)
