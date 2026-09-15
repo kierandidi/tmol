@@ -6,8 +6,10 @@ import torch
 from tmol.pack.compiled import (
     accumulate_interaction_graph_entries,
     build_interaction_graph,
+    finalize_interaction_graph_chunk_topology,
     finalize_interaction_graph_topology,
     initialize_interaction_graph_topology,
+    note_interaction_graph_chunk_topology,
     note_interaction_graph_topology,
     pack_anneal,
 )
@@ -106,33 +108,48 @@ def staged_graph(metadata, term_entries, chunk_size):
         )
     )
     topology = list(
-        initialize_interaction_graph_topology(
-            chunk_size, metadata[2], base[4], empty_values
+        initialize_interaction_graph_topology(metadata[2], base[4], empty_values)
+    )
+    for indices, values in term_entries:
+        (topology[0],) = note_interaction_graph_topology(
+            metadata[6],
+            topology[1],
+            topology[0],
+            indices,
+            values,
+        )
+    chunk_topology = list(
+        finalize_interaction_graph_topology(
+            chunk_size,
+            base[4],
+            topology[0],
+            empty_values,
         )
     )
     for indices, values in term_entries:
-        topology[0], topology[1] = note_interaction_graph_topology(
+        (chunk_topology[4],) = note_interaction_graph_chunk_topology(
             chunk_size,
             metadata[2],
             metadata[3],
             metadata[6],
-            topology[2],
-            topology[3],
-            topology[4],
-            topology[5],
-            topology[0],
             topology[1],
+            base[4],
+            chunk_topology[0],
+            chunk_topology[1],
+            chunk_topology[3],
+            chunk_topology[4],
             indices,
             values,
         )
-    base[11:16] = finalize_interaction_graph_topology(
+    base[11:14] = chunk_topology[:3]
+    base[14:16] = finalize_interaction_graph_chunk_topology(
         chunk_size,
         base[4],
-        topology[3],
-        topology[4],
-        topology[5],
-        topology[0],
-        topology[1],
+        chunk_topology[0],
+        chunk_topology[1],
+        chunk_topology[2],
+        chunk_topology[3],
+        chunk_topology[4],
         empty_values,
     )
     for indices, values in term_entries:
@@ -141,7 +158,7 @@ def staged_graph(metadata, term_entries, chunk_size):
             metadata[2],
             metadata[3],
             metadata[6],
-            topology[2],
+            topology[1],
             base[7],
             base[4],
             base[5],
@@ -291,9 +308,42 @@ def test_streaming_graph_preserves_assignments_and_rng_advancement():
     assert torch.equal(actual_rng_state, expected_rng_state)
 
 
+def test_chunk_topology_scales_with_observed_block_edges(torch_device):
+    """Keep chunk support edge-local for a pose with more than 128 blocks."""
+    counts = [[65] * 129]
+    metadata = graph_metadata(counts, torch_device)
+    indices, values = score_entries(metadata, [(0, 0, 128)])
+    empty_values = torch.empty(0, dtype=torch.float32, device=torch_device)
+    base = build_interaction_graph(
+        False,
+        32,
+        1,
+        *metadata,
+        torch.empty((3, 0), dtype=torch.int32, device=torch_device),
+        empty_values,
+        False,
+    )
+    block_adjacency, orig_block_to_molten = initialize_interaction_graph_topology(
+        metadata[2], base[4], empty_values
+    )
+    (block_adjacency,) = note_interaction_graph_topology(
+        metadata[6],
+        orig_block_to_molten,
+        block_adjacency,
+        indices,
+        values,
+    )
+    chunk_topology = finalize_interaction_graph_topology(
+        32, base[4], block_adjacency, empty_values
+    )
+
+    # Two directed block edges, each with a 3x3 chunk matrix in one int32 word.
+    assert chunk_topology[4].numel() == 2
+
+
 @requires_cuda
 def test_streaming_graph_memory_is_bounded_by_one_layout():
-    """Do not retain every large duplicate term layout across either pass."""
+    """Do not retain every large duplicate term layout across any pass."""
     device = torch.device("cuda")
     counts = [[2] * 129]
     metadata = graph_metadata(counts, device)

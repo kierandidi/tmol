@@ -455,12 +455,14 @@ def _build_streaming_interaction_graph(
     graph_inputs,
     verbose,
 ):
-    """Build a CUDA interaction graph with two bounded score passes."""
+    """Build a CUDA interaction graph with three bounded score passes."""
     from tmol.pack.compiled import (
         accumulate_interaction_graph_entries,
         build_interaction_graph,
+        finalize_interaction_graph_chunk_topology,
         finalize_interaction_graph_topology,
         initialize_interaction_graph_topology,
+        note_interaction_graph_chunk_topology,
         note_interaction_graph_topology,
     )
 
@@ -496,63 +498,70 @@ def _build_streaming_interaction_graph(
             verbose,
         )
     )
-    topology = list(
-        initialize_interaction_graph_topology(
-            chunk_size,
-            n_rots_for_block,
-            base[4],
-            empty_values,
-        )
+    block_adjacency, orig_block_to_molten = initialize_interaction_graph_topology(
+        n_rots_for_block,
+        base[4],
+        empty_values,
     )
-    (
-        block_adjacency,
-        chunk_adjacency,
-        orig_block_to_molten,
-        molten_block_chunk_offset,
-        n_chunks_per_pose,
-        pose_chunk_bitset_offset,
-    ) = topology
 
-    # Pass one records only topology. Disabling dispatch retention bounds live
-    # score/index storage to the current term.
+    # Pass one records block topology only. Chunk support is allocated after
+    # the sparse block graph is known, avoiding a global n_chunks**2 bitset.
     for _, indices, values in rotamer_scoring_module._iter_weighted_sparse_entries(
         coords, retain_shared_dispatch=False
     ):
-        block_adjacency, chunk_adjacency = note_interaction_graph_topology(
-            chunk_size,
-            n_rots_for_block,
-            rot_offset_for_block,
+        (block_adjacency,) = note_interaction_graph_topology(
             block_ind_for_rot,
             orig_block_to_molten,
-            molten_block_chunk_offset,
-            n_chunks_per_pose,
-            pose_chunk_bitset_offset,
             block_adjacency,
-            chunk_adjacency,
             indices,
             values,
         )
         del indices, values
 
-    (
-        base[11],
-        base[12],
-        base[13],
-        base[14],
-        base[15],
-    ) = finalize_interaction_graph_topology(
+    chunk_topology = list(
+        finalize_interaction_graph_topology(
+            chunk_size,
+            base[4],
+            block_adjacency,
+            empty_values,
+        )
+    )
+    del block_adjacency
+
+    # Pass two records chunk support inside each observed block edge.
+    for _, indices, values in rotamer_scoring_module._iter_weighted_sparse_entries(
+        coords, retain_shared_dispatch=False
+    ):
+        (chunk_topology[4],) = note_interaction_graph_chunk_topology(
+            chunk_size,
+            n_rots_for_block,
+            rot_offset_for_block,
+            block_ind_for_rot,
+            orig_block_to_molten,
+            base[4],
+            chunk_topology[0],
+            chunk_topology[1],
+            chunk_topology[3],
+            chunk_topology[4],
+            indices,
+            values,
+        )
+        del indices, values
+
+    base[11], base[12], base[13] = chunk_topology[:3]
+    base[14], base[15] = finalize_interaction_graph_chunk_topology(
         chunk_size,
         base[4],
-        molten_block_chunk_offset,
-        n_chunks_per_pose,
-        pose_chunk_bitset_offset,
-        block_adjacency,
-        chunk_adjacency,
+        chunk_topology[0],
+        chunk_topology[1],
+        chunk_topology[2],
+        chunk_topology[3],
+        chunk_topology[4],
         empty_values,
     )
-    del topology, block_adjacency, chunk_adjacency
+    del chunk_topology
 
-    # Pass two adds terms in the same canonical order. Native accumulation is
+    # Pass three adds terms in canonical order. Native accumulation is
     # additive, preserving duplicate coordinates and CSR transpose symmetry.
     for _, indices, values in rotamer_scoring_module._iter_weighted_sparse_entries(
         coords, retain_shared_dispatch=False
