@@ -47,6 +47,8 @@ from tmol.pack._pack_rotamers import (
 def test_interaction_graph_chunk_size_is_backend_specific(torch_device):
     expected = 32 if torch_device.type == "cuda" else 16
     assert _interaction_graph_chunk_size(torch_device) == expected
+    large_expected = 16
+    assert _interaction_graph_chunk_size(torch_device, 39_287) == large_expected
 
 
 def setup_pose_stack_and_task(poses, torch_device, dun_sampler):

@@ -133,10 +133,20 @@ _ESTIMATED_PACKING_BYTES_PER_BLOCK = 2 * 1024 * 1024
 _PACKING_FREE_MEMORY_FRACTION = 0.25
 _CPU_INTERACTION_GRAPH_CHUNK_SIZE = 16
 _CUDA_INTERACTION_GRAPH_CHUNK_SIZE = 32
+_CUDA_LARGE_INTERACTION_GRAPH_CHUNK_SIZE = 16
+_CUDA_LARGE_INTERACTION_GRAPH_BLOCK_THRESHOLD = 4096
 
 
-def _interaction_graph_chunk_size(device: torch.device) -> int:
+def _interaction_graph_chunk_size(
+    device: torch.device, max_n_blocks: int | None = None
+) -> int:
     """Select the benchmarked backend-specific sparse-table chunk width."""
+    if (
+        device.type == "cuda"
+        and max_n_blocks is not None
+        and max_n_blocks > _CUDA_LARGE_INTERACTION_GRAPH_BLOCK_THRESHOLD
+    ):
+        return _CUDA_LARGE_INTERACTION_GRAPH_CHUNK_SIZE
     return (
         _CUDA_INTERACTION_GRAPH_CHUNK_SIZE
         if device.type == "cuda"
@@ -356,7 +366,9 @@ def _calculate_packer_energies(pose_stack, sfxn, rotamer_set, task, verbose=Fals
         synchronize_device(pose_stack.device)
     end_time2 = time.perf_counter()
 
-    chunk_size = _interaction_graph_chunk_size(pose_stack.device)
+    chunk_size = _interaction_graph_chunk_size(
+        pose_stack.device, pose_stack.max_n_blocks
+    )
 
     graph_inputs = (
         pbt.n_types,
