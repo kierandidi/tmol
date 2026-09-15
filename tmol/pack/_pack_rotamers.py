@@ -1,5 +1,6 @@
 import contextlib
 import copy
+import gc
 import os
 import time
 
@@ -132,6 +133,10 @@ def pack_rotamers(
             + f" run SA: {end_time5 - end_time4: .2f} pose ctor: {end_time6 - end_time5: .2f}"
         )
 
+    if stream_interaction_graph:
+        del packer_energy_tables, rotamer_set
+        gc.collect()
+        torch.cuda.empty_cache()
     return new_pose_stack
 
 
