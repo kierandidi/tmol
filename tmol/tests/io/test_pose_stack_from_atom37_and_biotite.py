@@ -81,9 +81,12 @@ def test_canonical_form_routes_batched_atom37_and_gradients(biotite_1ubq, torch_
     assert torch.count_nonzero(atom37.grad[:, :, 0]) == 0
 
 
-def test_nonfinite_atom37_coordinate_falls_back_to_biotite(biotite_1ubq, torch_device):
+def test_all_nan_atom37_coordinate_is_missing_not_reference_fallback(
+    biotite_1ubq, torch_device
+):
     structure, atom37 = _atomized_atom37(_first_residues(biotite_1ubq, 1), torch_device)
-    atom37[:, 0, 1] = torch.nan
+    oxygen = int(np.flatnonzero(structure.atom_name == "O")[0])
+    atom37[:, oxygen, 1] = torch.nan
     atom37.requires_grad_(True)
 
     cf = canonical_form_from_biotite(
@@ -93,13 +96,104 @@ def test_nonfinite_atom37_coordinate_falls_back_to_biotite(biotite_1ubq, torch_d
     )
 
     co = canonical_ordering_for_biotite()
-    n_index = co.restypes_atom_index_mapping[structure.res_name[0]]["N"]
-    torch.testing.assert_close(
-        cf.coords[0, 0, n_index],
-        torch.as_tensor(structure.coord[0], device=torch_device),
-    )
+    oxygen_index = co.restypes_atom_index_mapping[structure.res_name[oxygen]]["O"]
+    assert torch.isnan(cf.coords[0, 0, oxygen_index]).all()
     torch.nan_to_num(cf.coords).sum().backward()
-    assert torch.count_nonzero(atom37.grad[:, 0, 1]) == 0
+    assert torch.count_nonzero(atom37.grad[:, oxygen, 1]) == 0
+
+
+def _build_atom37_pose(adapter, atom37, structure, context):
+    if adapter == "direct":
+        return pose_stack_from_atom37_and_biotite(
+            atom37, structure, context, no_optH=True
+        )
+    return prepare_pose_stack_from_atom37(structure, context)(atom37, opt_h=False)
+
+
+@pytest.mark.parametrize("adapter", ["direct", "prepared"])
+def test_atom37_mapped_coordinates_are_reference_independent(
+    biotite_1ubq, torch_device, adapter
+):
+    structure, atom37 = _atomized_atom37(_first_residues(biotite_1ubq, 1), torch_device)
+    context = build_context_from_biotite(structure, torch_device)
+    unresolved_reference = structure.copy()
+    unresolved_reference.coord[:] = np.nan
+    atom37 = atom37.requires_grad_(True)
+
+    expected = _build_atom37_pose(adapter, atom37, structure, context)
+    actual = _build_atom37_pose(adapter, atom37, unresolved_reference, context)
+
+    assert actual.max_n_blocks == 1
+    torch.testing.assert_close(actual.coords, expected.coords)
+    actual.coords[actual.real_atoms].sum().backward()
+    assert torch.count_nonzero(atom37.grad) > 0
+
+
+@pytest.mark.parametrize("adapter", ["direct", "prepared"])
+@pytest.mark.parametrize(
+    ("triplet", "message"),
+    [
+        ([np.nan, 1.0, 2.0], "partial NaN"),
+        ([np.inf, 1.0, 2.0], "contains infinity"),
+    ],
+)
+def test_atom37_rejects_malformed_mapped_triplets(
+    biotite_1ubq, torch_device, adapter, triplet, message
+):
+    structure, atom37 = _atomized_atom37(_first_residues(biotite_1ubq, 1), torch_device)
+    context = build_context_from_biotite(structure, torch_device)
+    atom37[0, 0, 1] = torch.tensor(triplet, device=torch_device)
+
+    with pytest.raises(Atom37MappingError, match=message):
+        _build_atom37_pose(adapter, atom37, structure, context)
+
+
+@pytest.mark.parametrize("adapter", ["direct", "prepared"])
+@pytest.mark.parametrize("reference_missing", [False, True])
+def test_atom37_required_mainchain_missing_from_both_sources_errors(
+    biotite_1ubq, torch_device, adapter, reference_missing
+):
+    structure, atom37 = _atomized_atom37(_first_residues(biotite_1ubq, 1), torch_device)
+    context = build_context_from_biotite(structure, torch_device)
+    nitrogen = int(np.flatnonzero(structure.atom_name == "N")[0])
+    if reference_missing:
+        structure.coord[nitrogen] = np.nan
+    atom37[:, nitrogen, 1] = torch.nan
+
+    with pytest.raises(
+        Atom37MappingError,
+        match="Required mainchain.*Atom37/Biotite.*never fall back",
+    ):
+        _build_atom37_pose(adapter, atom37, structure, context)
+
+
+@pytest.mark.parametrize("adapter", ["direct", "prepared"])
+@pytest.mark.parametrize("reference_missing", [False, True])
+def test_atom37_missing_leaf_completion_is_deterministic_and_differentiable(
+    biotite_1ubq, torch_device, adapter, reference_missing
+):
+    structure, atom37 = _atomized_atom37(_first_residues(biotite_1ubq, 1), torch_device)
+    context = build_context_from_biotite(structure, torch_device)
+    oxygen = int(np.flatnonzero(structure.atom_name == "O")[0])
+    structure.coord[oxygen] = np.nan if reference_missing else [100.0, 100.0, 100.0]
+    atom37[:, oxygen, 1] = torch.nan
+
+    first_coords = atom37.detach().clone().requires_grad_(True)
+    second_coords = atom37.detach().clone()
+    first = _build_atom37_pose(adapter, first_coords, structure, context)
+    second = _build_atom37_pose(adapter, second_coords, structure, context)
+    torch.testing.assert_close(first.coords, second.coords)
+
+    block_type = first.packed_block_types.active_block_types[
+        int(first.block_type_ind[0, 0])
+    ]
+    pose_oxygen = int(first.block_coord_offset[0, 0]) + block_type.atom_to_idx["O"]
+    assert torch.isfinite(first.coords[0, pose_oxygen]).all()
+    if not reference_missing:
+        assert not torch.all(first.coords[0, pose_oxygen] == 100)
+    first.coords[0, pose_oxygen].sum().backward()
+    assert torch.count_nonzero(first_coords.grad) > 0
+    assert torch.count_nonzero(first_coords.grad[:, oxygen, 1]) == 0
 
 
 @pytest.mark.parametrize("filename", ["1ubq.pdb", "1bna.pdb", "3zp8.pdb"])
@@ -121,9 +215,21 @@ def test_atom37_pose_supports_protein_dna_and_rna(filename, torch_device):
     assert torch.count_nonzero(atom37.grad) > 0
 
 
-@pytest.mark.parametrize("filename", ["1ubq.pdb", "1bna.pdb", "3zp8.pdb"])
-def test_prepared_atom37_builder_matches_direct_pose(filename, torch_device):
+@pytest.mark.parametrize(
+    "filename,closed",
+    [("1ubq.pdb", False), ("1bna.pdb", False), ("3zp8.pdb", False), ("1ubq.pdb", True)],
+)
+def test_prepared_atom37_builder_matches_direct_pose(filename, closed, torch_device):
     structure = _first_residues(_load_structure(data_path("pdb", filename)), 2)
+    if closed:
+        # Closing the peptide changes the terminal hydrogen complement.
+        structure = structure[structure.element != "H"]
+        structure.bonds = struc.BondList(structure.array_length())
+        structure.bonds.add_bond(
+            int(np.flatnonzero(structure.atom_name == "C")[-1]),
+            int(np.flatnonzero(structure.atom_name == "N")[0]),
+            struc.BondType.SINGLE,
+        )
     structure, atom37 = _atomized_atom37(structure, torch_device, n_poses=2)
     context = build_context_from_biotite(structure, torch_device)
 
@@ -131,6 +237,12 @@ def test_prepared_atom37_builder_matches_direct_pose(filename, torch_device):
         atom37, structure, context, no_optH=True
     )
     builder = prepare_pose_stack_from_atom37(structure, context)
+    if closed:
+        bonds = builder._canonical_form(
+            builder._canonical_coords(atom37)
+        ).covalent_bonds
+        assert bonds.shape == (2, 5)
+        assert bonds[:, 0].tolist() == [0, 1]
     actual = builder(atom37, opt_h=False)
 
     torch.testing.assert_close(actual.coords, expected.coords)
@@ -149,12 +261,46 @@ def test_prepared_atom37_builder_is_reusable_and_differentiable(
 
     first_coords = atom37.detach().clone().requires_grad_(True)
     first_pose = builder(first_coords, opt_h=False)
-    assert (
-        next(iter(builder._pose_topologies.values())).pose_stack.coords.grad_fn is None
+    cached_pose = next(iter(builder._pose_topologies.values())).pose_stack
+    assert cached_pose.coords.grad_fn is None
+    assert first_pose.packed_block_types is context.packed_block_types
+    assert cached_pose.packed_block_types is context.packed_block_types
+    structural_tensors = (
+        "coords",
+        "block_coord_offset",
+        "block_coord_offset64",
+        "inter_residue_connections",
+        "inter_residue_connections64",
+        "inter_block_bondsep",
+        "inter_block_bondsep64",
+        "block_type_ind",
+        "block_type_ind64",
+        "chain_id",
+        "chain_id64",
+    )
+    for name in structural_tensors:
+        assert (
+            getattr(first_pose, name).data_ptr()
+            != getattr(cached_pose, name).data_ptr()
+        )
+    assert not np.shares_memory(
+        first_pose.pdb_info.residue_labels, cached_pose.pdb_info.residue_labels
+    )
+    assert not np.shares_memory(
+        first_pose.pdb_info.atom_occupancy, cached_pose.pdb_info.atom_occupancy
     )
     first_snapshot = first_pose.coords.detach().clone()
     first_pose.coords[first_pose.real_atoms].sum().backward()
     assert torch.count_nonzero(first_coords.grad) > 0
+
+    first_pose.block_type_ind.fill_(-1)
+    first_pose.block_coord_offset.add_(100)
+    first_pose.inter_residue_connections.fill_(42)
+    first_pose.pdb_info.residue_labels.fill(-100)
+    first_pose.pdb_info.residue_insertion_codes.fill("X")
+    first_pose.pdb_info.chain_labels.fill("Z")
+    first_pose.pdb_info.atom_occupancy.fill(-1)
+    first_pose.pdb_info.atom_b_factor.fill(-1)
 
     second_coords = atom37.detach().clone()
     second_coords[:, :, 1] += 1
@@ -163,8 +309,35 @@ def test_prepared_atom37_builder_is_reusable_and_differentiable(
     expected_second = pose_stack_from_atom37_and_biotite(
         second_coords, structure, context, no_optH=True
     )
+    assert second_pose.packed_block_types is context.packed_block_types
     torch.testing.assert_close(first_pose.coords, first_snapshot)
-    torch.testing.assert_close(second_pose.coords, expected_second.coords)
+    for name in structural_tensors:
+        torch.testing.assert_close(
+            getattr(second_pose, name), getattr(expected_second, name)
+        )
+        assert (
+            getattr(second_pose, name).data_ptr()
+            != getattr(cached_pose, name).data_ptr()
+        )
+        assert (
+            getattr(second_pose, name).data_ptr()
+            != getattr(first_pose, name).data_ptr()
+        )
+    for name in (
+        "residue_labels",
+        "residue_insertion_codes",
+        "chain_labels",
+        "atom_occupancy",
+        "atom_b_factor",
+    ):
+        actual_metadata = getattr(second_pose.pdb_info, name)
+        np.testing.assert_array_equal(
+            actual_metadata, getattr(expected_second.pdb_info, name)
+        )
+        assert not np.shares_memory(
+            actual_metadata, getattr(cached_pose.pdb_info, name)
+        )
+        assert not np.shares_memory(actual_metadata, getattr(first_pose.pdb_info, name))
     second_pose.coords[second_pose.real_atoms].sum().backward()
     assert torch.count_nonzero(second_coords.grad) > 0
 
@@ -176,8 +349,9 @@ def test_prepared_atom37_builder_is_reusable_and_differentiable(
     torch.testing.assert_close(batched_pose.coords, expected_batched.coords)
     assert set(builder._pose_topologies) == {1, 2}
 
+    oxygen = int(np.flatnonzero(structure.atom_name == "O")[0])
     nonfinite_coords = second_coords.detach().clone()
-    nonfinite_coords[:, 0, 1] = torch.nan
+    nonfinite_coords[:, oxygen, 1] = torch.nan
     actual_nonfinite = builder(nonfinite_coords, opt_h=False)
     expected_nonfinite = pose_stack_from_atom37_and_biotite(
         nonfinite_coords, structure, context, no_optH=True
@@ -189,26 +363,40 @@ def test_prepared_atom37_builder_is_reusable_and_differentiable(
     assert set(builder._pose_topologies) == {1, 3, 4, 5}
 
 
-@pytest.mark.parametrize("filename", ["1ubq.pdb", "1bna.pdb", "3zp8.pdb"])
-def test_prepared_atom37_builder_preserves_default_opth(filename, torch_device):
-    structure = _first_residues(_load_structure(data_path("pdb", filename)), 2)
+@pytest.mark.parametrize(
+    ("residue_start", "residue_stop", "nhq_name"),
+    [(0, 2, "GLN"), (66, 69, "HIS")],
+)
+def test_explicit_opth_flags_preserve_previous_results(
+    biotite_1ubq, torch_device, residue_start, residue_stop, nhq_name
+):
+    starts = struc.get_residue_starts(biotite_1ubq, add_exclusive_stop=True)
+    structure = biotite_1ubq[starts[residue_start] : starts[residue_stop]].copy()
+    assert nhq_name in structure.res_name
+    structure = structure[structure.element != "H"]
     structure, atom37 = _atomized_atom37(structure, torch_device)
     context = build_context_from_biotite(structure, torch_device)
-
     builder = prepare_pose_stack_from_atom37(structure, context)
-    for coords in (atom37, atom37 + torch.randn_like(atom37) * 0.01):
-        coords = coords.detach().requires_grad_(True)
-        torch.manual_seed(0)
-        expected = pose_stack_from_atom37_and_biotite(coords, structure, context)
-        torch.manual_seed(0)
-        actual = builder(coords)
+    preserved = builder(atom37)
+    coords = atom37.detach().requires_grad_(True)
 
-        torch.testing.assert_close(actual.coords, expected.coords)
-        actual.coords[actual.real_atoms].sum().backward()
-        assert torch.count_nonzero(coords.grad) > 0
+    torch.manual_seed(0)
+    expected = pose_stack_from_atom37_and_biotite(
+        coords, structure, context, no_optH=False
+    )
+    torch.manual_seed(0)
+    actual = builder(coords, opt_h=True)
+
+    torch.testing.assert_close(actual.block_type_ind, expected.block_type_ind)
+    torch.testing.assert_close(actual.coords, expected.coords)
+    assert not torch.equal(actual.block_type_ind, preserved.block_type_ind) or not (
+        torch.allclose(actual.coords, preserved.coords)
+    )
+    actual.coords[actual.real_atoms].sum().backward()
+    assert torch.count_nonzero(coords.grad) > 0
 
 
-def test_prepared_atom37_builder_falls_back_for_variable_atom_presence(
+def test_prepared_atom37_builder_replays_variable_leaf_presence(
     biotite_1ubq, torch_device
 ):
     structure = _first_residues(biotite_1ubq, 2)
@@ -227,8 +415,8 @@ def test_prepared_atom37_builder_falls_back_for_variable_atom_presence(
     actual_second = builder(second_coords, opt_h=False)
 
     assert torch.isfinite(first.coords[first.real_atoms]).all()
-    assert not builder._topology_cache_safe
-    assert not builder._pose_topologies
+    assert builder._topology_cache_safe
+    assert set(builder._pose_topologies) == {1}
     torch.testing.assert_close(actual_second.coords, expected_second.coords)
 
 

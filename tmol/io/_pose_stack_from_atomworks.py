@@ -1,4 +1,3 @@
-# flake8: noqa: E201,E231,E241
 import torch
 import numpy
 import toolz
@@ -17,59 +16,20 @@ from tmol.pose import (
     PoseStack,
 )
 
-# ---------------------------------------------------------------------------
-# Atomworks UNIFIED_ATOM37_ENCODING constants (protein subset).
-# Mirrored verbatim from atomworks so that tmol has no runtime dependency on
-# the atomworks package.
-#
-# Index 0  : <M>  (mask token – all-empty atoms)
-# Index 1-20: standard amino acids
-# Index 21 : UNK  (unknown amino acid – all-empty atoms)
-# ---------------------------------------------------------------------------
+# Use AtomWorks' protein token order and atom slots as the source of truth.
+# This module therefore has a runtime AtomWorks dependency. Copy the public
+# lists so callers cannot mutate AtomWorks' shared encoding.
+from atomworks.ml.encoding_definitions import UNIFIED_ATOM37_ENCODING
 
-# fmt: off
-ATOMWORKS_NAME3S = [
-    "<M>",                                          # 0: mask
-    "ALA", "ARG", "ASN", "ASP", "CYS",             # 1-5
-    "GLN", "GLU", "GLY", "HIS", "ILE",             # 6-10
-    "LEU", "LYS", "MET", "PHE", "PRO",             # 11-15
-    "SER", "THR", "TRP", "TYR", "VAL",             # 16-20
-    "UNK",                                          # 21
-]
-
-# Per-token atom names in the 37-slot layout.
-# Each value is a list of exactly 37 stripped atom-name strings;
-# "" means no atom occupies that slot.
+_ATOMWORKS_MIN_PROTEIN_IDX = UNIFIED_ATOM37_ENCODING.token_to_idx["ALA"]
+_ATOMWORKS_MAX_PROTEIN_IDX = UNIFIED_ATOM37_ENCODING.token_to_idx["VAL"]
+ATOMWORKS_NAME3S = UNIFIED_ATOM37_ENCODING.tokens[
+    : UNIFIED_ATOM37_ENCODING.token_to_idx["UNK"] + 1
+].tolist()
 ATOMWORKS_ATOM37_NAMES = {
-    #                0     1     2     3     4     5     6     7     8     9    10    11    12    13    14    15    16    17    18    19    20    21    22    23    24    25    26    27    28    29    30    31    32    33    34    35    36
-    "<M>": [       "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   ""],
-    "ALA": [      "N", "CA",  "C", "CB",  "O",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "ARG": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "", "CD",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "", "NE",   "",   "",   "",   "",   "","NH1","NH2",   "", "CZ",   "",   "",   "","OXT"],
-    "ASN": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "",   "",   "",   "",   "","ND2","OD1",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "ASP": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OD1","OD2",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "CYS": [      "N", "CA",  "C", "CB",  "O",   "",   "",   "",   "",   "", "SG",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "GLN": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "", "CD",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","NE2","OE1",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "GLU": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "", "CD",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OE1","OE2",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "GLY": [      "N", "CA",  "C",   "",  "O",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "HIS": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "",   "",   "","CD2","ND1",   "",   "",   "",   "",   "","CE1",   "",   "",   "",   "","NE2",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "ILE": [      "N", "CA",  "C", "CB",  "O",   "","CG1","CG2",   "",   "",   "",   "","CD1",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "LEU": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "",   "","CD1","CD2",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "LYS": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "", "CD",   "",   "",   "",   "",   "",   "",   "", "CE",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "", "NZ","OXT"],
-    "MET": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "", "SD", "CE",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "PHE": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "",   "","CD1","CD2",   "",   "",   "",   "",   "",   "","CE1","CE2",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "", "CZ",   "",   "",   "","OXT"],
-    "PRO": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "", "CD",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "SER": [      "N", "CA",  "C", "CB",  "O",   "",   "",   "", "OG",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "THR": [      "N", "CA",  "C", "CB",  "O",   "",   "","CG2",   "","OG1",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "TRP": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "",   "","CD1","CD2",   "",   "",   "",   "",   "",   "",   "","CE2","CE3",   "","NE1",   "",   "",   "","CH2",   "",   "",   "",   "","CZ2","CZ3",   "","OXT"],
-    "TYR": [      "N", "CA",  "C", "CB",  "O", "CG",   "",   "",   "",   "",   "",   "","CD1","CD2",   "",   "",   "",   "",   "",   "","CE1","CE2",   "",   "",   "",   "",   "",   "",   "",   "",   "", "OH", "CZ",   "",   "",   "","OXT"],
-    "VAL": [      "N", "CA",  "C", "CB",  "O",   "","CG1","CG2",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "","OXT"],
-    "UNK": [       "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   "",   ""],
+    name: UNIFIED_ATOM37_ENCODING.token_atoms[name].tolist()
+    for name in ATOMWORKS_NAME3S
 }
-
-# Protein token index range in the atomworks encoding
-_ATOMWORKS_MIN_PROTEIN_IDX = 1
-_ATOMWORKS_MAX_PROTEIN_IDX = 20
-# fmt: on
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +86,7 @@ def pose_stack_from_atom37_and_biotite(
     atom37_coords: torch.Tensor,
     biotite_structure: biotite.structure.AtomArray | biotite.structure.AtomArrayStack,
     context: PoseBuildContext,
-    no_optH: bool = False,
+    no_optH: bool = True,
     **kwargs,
 ) -> PoseStack | tuple[PoseStack, dict] | tuple[PoseStack, PoseBuildContext]:
     """Build a differentiable PoseStack from atom37 coordinates and a topology.
@@ -134,20 +94,20 @@ def pose_stack_from_atom37_and_biotite(
     Unlike :func:`pose_stack_from_atomworks`, this supports any chemistry shared
     by AtomWorks and the supplied TMol context (including ordinary ligands and
     nucleic acids): the *chemical topology* is taken from
-    ``biotite_structure`` while the *coordinates* come from the
-    autograd-tracked ``atom37_coords`` tensor. This is the entry point for
-    differentiable scoring/guidance over atomized inputs, where the same fixed
-    topology is scored repeatedly as coordinates move.
+    ``biotite_structure`` while mapped coordinates come from the
+    autograd-tracked ``atom37_coords`` tensor. Unmapped finite reference atoms
+    remain context. This is the entry point for differentiable scoring/guidance
+    over atomized inputs, where the same fixed topology is scored repeatedly as
+    coordinates move.
 
     Build ``context`` once with :func:`build_context_from_biotite` (with
     ``prepare_ligands=True`` when ligands are present). For repeated diffusion
     or search steps, bind the topology once with
     :func:`prepare_pose_stack_from_atom37` and call the returned builder with
-    each coordinate batch. ``biotite_structure`` is used only for its chemical
-    identity, so a single reference structure can be reused regardless of its
-    coordinates. It must carry two integer annotations that map each atom into
-    the atom37 tensor: ``token_id`` (the token axis) and ``atom37_slot`` (the
-    0..36 slot).
+    each coordinate batch. Mapped reference coordinates are ignored, so one
+    reference topology can be reused as those coordinates change. It must carry
+    two integer annotations that map each atom into the atom37 tensor:
+    ``token_id`` (the token axis) and ``atom37_slot`` (the 0..36 slot).
 
     Topology is derived from chemical identity alone -- ``missing_density`` breaks
     and automatic disulfide detection (both coordinate-dependent) are disabled --
@@ -165,8 +125,9 @@ def pose_stack_from_atom37_and_biotite(
     context : PoseBuildContext
         Structure-independent context from :func:`build_context_from_biotite`.
     no_optH : bool
-        Run TMol's hydrogen optimization pipeline when False (default). Pass
-        True to leave newly built hydrogens at ideal positions.
+        Preserve finite input hydrogens and leave newly built hydrogens at ideal
+        positions when True (default). Pass False to run TMol's hydrogen
+        optimization pipeline.
     **kwargs
         Additional arguments forwarded to ``pose_stack_from_biotite``.
 
@@ -347,7 +308,7 @@ def atomworks_from_pose_stack(
 
 
 # ---------------------------------------------------------------------------
-# Memoized helpers (following the OpenFold / RoseTTAFold2 pattern)
+# Shared protein chemistry and device mappings
 # ---------------------------------------------------------------------------
 
 
