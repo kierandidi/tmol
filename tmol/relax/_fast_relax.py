@@ -399,8 +399,9 @@ def relax_pack_min_step(
     if verbose:
         synchronize_device(pose_stack.device)
     end_time1 = time.perf_counter()
-    if isinstance(min_fn, _DefaultCartesianMinimizer):
-        min_fn.release_cached_state()
+    release_cached_state = getattr(min_fn, "release_cached_state", None)
+    if release_cached_state is not None:
+        release_cached_state()
     packed_pose_stack = pack_rotamers(pose_stack, sfxn, task, verbose)
 
     sfxn.set_weight(ScoreType.fa_ljrep, fa_rep_min_weight)
