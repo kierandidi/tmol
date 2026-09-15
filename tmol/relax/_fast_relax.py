@@ -324,6 +324,7 @@ def fast_relax(  # noqa: C901
 
     wpsm = sfxn.render_whole_pose_scoring_module(pose_stack)
     best_score = wpsm(pose_stack.coords)
+    del wpsm
     best_ps = pose_stack.clone()
 
     if min_fn is None:
