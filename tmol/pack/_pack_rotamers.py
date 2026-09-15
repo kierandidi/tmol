@@ -507,13 +507,15 @@ def _build_streaming_interaction_graph(
     )
     (
         block_adjacency,
-        chunk_pair_keys,
+        block_pair_keys,
+        block_pair_support_offsets,
+        chunk_support,
+        chunk_support_cursor,
+        topology_overflow,
         orig_block_to_molten,
         molten_block_chunk_offset,
-        n_chunks_per_pose,
-        pose_global_chunk_offset,
-        hash_overflow,
     ) = topology
+    del topology
 
     # Pass one records only topology. Disabling dispatch retention bounds live
     # score/index storage to the current term.
@@ -521,11 +523,14 @@ def _build_streaming_interaction_graph(
         coords, retain_shared_dispatch=False
     ):
         while True:
-            hash_overflow.zero_()
+            topology_overflow.zero_()
             (
                 block_adjacency,
-                chunk_pair_keys,
-                hash_overflow,
+                block_pair_keys,
+                block_pair_support_offsets,
+                chunk_support,
+                chunk_support_cursor,
+                topology_overflow,
             ) = note_interaction_graph_topology(
                 chunk_size,
                 n_rots_for_block,
@@ -533,21 +538,39 @@ def _build_streaming_interaction_graph(
                 block_ind_for_rot,
                 orig_block_to_molten,
                 molten_block_chunk_offset,
-                n_chunks_per_pose,
-                pose_global_chunk_offset,
                 block_adjacency,
-                chunk_pair_keys,
-                hash_overflow,
+                block_pair_keys,
+                block_pair_support_offsets,
+                chunk_support,
+                chunk_support_cursor,
+                topology_overflow,
                 indices,
                 values,
             )
-            if not hash_overflow.item():
+            hash_overflow, support_overflow = topology_overflow.tolist()
+            if not hash_overflow and not support_overflow:
                 break
-            chunk_pair_keys = resize_interaction_graph_topology(
-                chunk_pair_keys,
-                chunk_pair_keys.numel() * 2,
-                values,
-            )
+            if hash_overflow:
+                block_pair_keys, block_pair_support_offsets = (
+                    resize_interaction_graph_topology(
+                        block_pair_keys,
+                        block_pair_support_offsets,
+                        block_pair_keys.numel() * 2,
+                        values,
+                    )
+                )
+            if support_overflow:
+                new_capacity = chunk_support.numel() * 2
+                required_capacity = chunk_support_cursor.item()
+                while new_capacity < required_capacity:
+                    new_capacity *= 2
+                resized_support = torch.zeros(
+                    new_capacity,
+                    dtype=chunk_support.dtype,
+                    device=chunk_support.device,
+                )
+                resized_support[: chunk_support.numel()].copy_(chunk_support)
+                chunk_support = resized_support
         del indices, values
 
     (
@@ -560,13 +583,13 @@ def _build_streaming_interaction_graph(
         chunk_size,
         base[4],
         molten_block_chunk_offset,
-        n_chunks_per_pose,
-        pose_global_chunk_offset,
         block_adjacency,
-        chunk_pair_keys,
+        block_pair_keys,
+        block_pair_support_offsets,
+        chunk_support,
         empty_values,
     )
-    del topology, block_adjacency, chunk_pair_keys
+    del block_adjacency, block_pair_keys, chunk_support
 
     # Pass two adds terms in the same canonical order. Native accumulation is
     # additive, preserving duplicate coordinates and CSR transpose symmetry.

@@ -148,7 +148,8 @@ std::vector<Tensor> initialize_interaction_graph_topology(
             std::get<3>(topology).tensor,
             std::get<4>(topology).tensor,
             std::get<5>(topology).tensor,
-            std::get<6>(topology).tensor};
+            std::get<6>(topology).tensor,
+            std::get<7>(topology).tensor};
       }));
   return result;
 }
@@ -160,11 +161,12 @@ std::vector<Tensor> note_interaction_graph_topology(
     Tensor block_ind_for_rot,
     Tensor orig_block_to_molten,
     Tensor molten_block_chunk_offset,
-    Tensor n_chunks_per_pose,
-    Tensor pose_global_chunk_offset,
     Tensor block_adjacency,
-    Tensor chunk_pair_keys,
-    Tensor hash_overflow,
+    Tensor block_pair_keys,
+    Tensor block_pair_support_offsets,
+    Tensor chunk_support,
+    Tensor chunk_support_cursor,
+    Tensor topology_overflow,
     Tensor sparse_inds,
     Tensor energy_template) {
   TMOL_DISPATCH_FLOATING_DEVICE(
@@ -183,32 +185,43 @@ std::vector<Tensor> note_interaction_graph_topology(
                 TCAST(block_ind_for_rot),
                 TCAST(orig_block_to_molten),
                 TCAST(molten_block_chunk_offset),
-                TCAST(n_chunks_per_pose),
-                TCAST(pose_global_chunk_offset),
                 TCAST(block_adjacency),
-                TCAST(chunk_pair_keys),
-                TCAST(hash_overflow),
+                TCAST(block_pair_keys),
+                TCAST(block_pair_support_offsets),
+                TCAST(chunk_support),
+                TCAST(chunk_support_cursor),
+                TCAST(topology_overflow),
                 TCAST(sparse_inds));
       }));
-  return {block_adjacency, chunk_pair_keys, hash_overflow};
+  return {
+      block_adjacency,
+      block_pair_keys,
+      block_pair_support_offsets,
+      chunk_support,
+      chunk_support_cursor,
+      topology_overflow};
 }
 
-Tensor resize_interaction_graph_topology(
-    Tensor old_chunk_pair_keys,
+std::vector<Tensor> resize_interaction_graph_topology(
+    Tensor old_block_pair_keys,
+    Tensor old_block_pair_support_offsets,
     int64_t const new_capacity,
     Tensor energy_template) {
-  Tensor result;
+  std::vector<Tensor> result;
   TMOL_DISPATCH_FLOATING_DEVICE(
       energy_template.options(), "pack_resize_ig_topology", ([&] {
         constexpr tmol::Device Dev = device_t;
-        result = StreamingInteractionGraph<
-                     score::common::DeviceOperations,
-                     Dev,
-                     scalar_t,
-                     int64_t>::
-                     resize_chunk_pair_keys(
-                         mgr, TCAST(old_chunk_pair_keys), new_capacity)
-                         .tensor;
+        auto resized = StreamingInteractionGraph<
+            score::common::DeviceOperations,
+            Dev,
+            scalar_t,
+            int64_t>::
+            resize_block_pair_hash(
+                mgr,
+                TCAST(old_block_pair_keys),
+                TCAST(old_block_pair_support_offsets),
+                new_capacity);
+        result = {std::get<0>(resized).tensor, std::get<1>(resized).tensor};
       }));
   return result;
 }
@@ -217,10 +230,10 @@ std::vector<Tensor> finalize_interaction_graph_topology(
     int64_t const chunk_size,
     Tensor n_bc_rots_for_molten_block,
     Tensor molten_block_chunk_offset,
-    Tensor n_chunks_per_pose,
-    Tensor pose_global_chunk_offset,
     Tensor block_adjacency,
-    Tensor chunk_pair_keys,
+    Tensor block_pair_keys,
+    Tensor block_pair_support_offsets,
+    Tensor chunk_support,
     Tensor energy_template) {
   std::vector<Tensor> result;
   TMOL_DISPATCH_FLOATING_DEVICE(
@@ -236,10 +249,10 @@ std::vector<Tensor> finalize_interaction_graph_topology(
                 chunk_size,
                 TCAST(n_bc_rots_for_molten_block),
                 TCAST(molten_block_chunk_offset),
-                TCAST(n_chunks_per_pose),
-                TCAST(pose_global_chunk_offset),
                 TCAST(block_adjacency),
-                TCAST(chunk_pair_keys));
+                TCAST(block_pair_keys),
+                TCAST(block_pair_support_offsets),
+                TCAST(chunk_support));
         result = {
             std::get<0>(topology).tensor,
             std::get<1>(topology).tensor,

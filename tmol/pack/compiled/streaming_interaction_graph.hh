@@ -22,11 +22,12 @@ struct StreamingInteractionGraph {
       -> std::tuple<
           TPack<int32_t, 3, D>,
           TPack<int64_t, 1, D>,
-          TPack<int64_t, 2, D>,
-          TPack<int64_t, 2, D>,
           TPack<int64_t, 1, D>,
+          TPack<int32_t, 1, D>,
           TPack<int64_t, 1, D>,
-          TPack<int32_t, 1, D>>;
+          TPack<int32_t, 1, D>,
+          TPack<int64_t, 2, D>,
+          TPack<int64_t, 2, D>>;
 
   static void note(
       ContextManager& mgr,
@@ -36,16 +37,19 @@ struct StreamingInteractionGraph {
       TView<int32_t, 1, D> block_ind_for_rot,
       TView<int64_t, 2, D> orig_block_to_molten,
       TView<int64_t, 2, D> molten_block_chunk_offset,
-      TView<int64_t, 1, D> n_chunks_per_pose,
-      TView<int64_t, 1, D> pose_global_chunk_offset,
       TView<int32_t, 3, D> block_adjacency,
-      TView<int64_t, 1, D> chunk_pair_keys,
-      TView<int32_t, 1, D> hash_overflow,
+      TView<int64_t, 1, D> block_pair_keys,
+      TView<int64_t, 1, D> block_pair_support_offsets,
+      TView<int32_t, 1, D> chunk_support,
+      TView<int64_t, 1, D> chunk_support_cursor,
+      TView<int32_t, 1, D> topology_overflow,
       TView<int32_t, 2, D> sparse_inds);
 
-  static TPack<int64_t, 1, D> resize_chunk_pair_keys(
+  static std::tuple<TPack<int64_t, 1, D>, TPack<int64_t, 1, D>>
+  resize_block_pair_hash(
       ContextManager& mgr,
-      TView<int64_t, 1, D> old_chunk_pair_keys,
+      TView<int64_t, 1, D> old_block_pair_keys,
+      TView<int64_t, 1, D> old_block_pair_support_offsets,
       int64_t new_capacity);
 
   static auto finalize(
@@ -53,10 +57,10 @@ struct StreamingInteractionGraph {
       int chunk_size,
       TView<Int, 2, D> n_bc_rots_for_molten_block,
       TView<int64_t, 2, D> molten_block_chunk_offset,
-      TView<int64_t, 1, D> n_chunks_per_pose,
-      TView<int64_t, 1, D> pose_global_chunk_offset,
       TView<int32_t, 3, D> block_adjacency,
-      TView<int64_t, 1, D> chunk_pair_keys)
+      TView<int64_t, 1, D> block_pair_keys,
+      TView<int64_t, 1, D> block_pair_support_offsets,
+      TView<int32_t, 1, D> chunk_support)
       -> std::tuple<
           TPack<int64_t, 1, D>,
           TPack<int32_t, 1, D>,
