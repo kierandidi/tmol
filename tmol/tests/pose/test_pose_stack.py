@@ -122,6 +122,12 @@ def test_round_trip_irregular_pose_stack_and_split(
         legacy.inter_block_bondsep.data_ptr()
         != pose_stack.inter_block_bondsep.data_ptr()
     )
+    shared_cache = pose_stack.clone(share_inter_block_bondsep=True)
+    assert (
+        shared_cache.inter_block_bondsep.data_ptr()
+        == pose_stack.inter_block_bondsep.data_ptr()
+    )
+    assert shared_cache.coords.data_ptr() != pose_stack.coords.data_ptr()
     for i in range(n_poses):
         split_pose_stack = pose_stack.split(i)
         assert split_pose_stack.n_poses == 1

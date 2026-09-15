@@ -186,8 +186,8 @@ class PoseStack:
         n_ats_per_pose = torch.sum(self.n_ats_per_block, dim=1).unsqueeze(1)
         return atom_inds < n_ats_per_pose
 
-    def clone(self) -> "PoseStack":
-        """Deep-copy clone of this PoseStack"""
+    def clone(self, *, share_inter_block_bondsep: bool = False) -> "PoseStack":
+        """Clone this pose, optionally sharing its immutable bond-separation cache."""
         new_constraint_set = (
             self.constraint_set.clone() if self.constraint_set is not None else None
         )
@@ -198,7 +198,11 @@ class PoseStack:
             block_coord_offset64=self.block_coord_offset64.detach().clone(),
             inter_residue_connections=self.inter_residue_connections.detach().clone(),
             inter_residue_connections64=self.inter_residue_connections64.detach().clone(),
-            inter_block_bondsep=self.inter_block_bondsep.detach().clone(),
+            inter_block_bondsep=(
+                self.inter_block_bondsep
+                if share_inter_block_bondsep
+                else self.inter_block_bondsep.detach().clone()
+            ),
             block_type_ind=self.block_type_ind.detach().clone(),
             block_type_ind64=self.block_type_ind64.detach().clone(),
             chain_id=self.chain_id.detach().clone(),
