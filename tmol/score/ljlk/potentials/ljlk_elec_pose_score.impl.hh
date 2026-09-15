@@ -1114,7 +1114,9 @@ auto LJLKAndElecPoseScoreDispatch<DeviceOperations, D, Real, Int>::
         Real max_dis,
         TView<Real, 1, D> score_weights,
         TView<Real, 1, D> output_gradients,
-        TPack<Int, 2, D> shared_dispatch_indices)
+        TPack<Int, 2, D> shared_dispatch_indices,
+        Int candidate_begin,
+        Int candidate_end)
         -> std::tuple<
             TPack<Real, 4, D>,
             TPack<LJLKExternalVec<Real, 3>, 2, D>,
@@ -1160,7 +1162,9 @@ auto LJLKAndElecPoseScoreDispatch<DeviceOperations, D, Real, Int>::
               rot_offset_for_block,
               scratch_rot_spheres_t.view,
               lockstep_group_for_block,
-              max_dis);
+              max_dis,
+              candidate_begin,
+              candidate_end);
   }
   assert(
       output_gradients.size(0) == 0

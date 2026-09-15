@@ -138,7 +138,9 @@ struct LJLKAndElecPoseScoreDispatch {
       Real max_dis,
       TView<Real, 1, D> score_weights,
       TView<Real, 1, D> output_gradients,
-      TPack<Int, 2, D> shared_dispatch_indices)
+      TPack<Int, 2, D> shared_dispatch_indices,
+      Int candidate_begin,
+      Int candidate_end)
       -> std::tuple<
           TPack<Real, 4, D>,
           TPack<LJLKExternalVec<Real, 3>, 2, D>,

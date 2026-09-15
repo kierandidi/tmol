@@ -38,6 +38,7 @@ _CPU_ROTAMER_SORTED_LAYOUT_MIN_NNZ = 4096
 _MAX_CPU_SCORE_TERM_WORKERS = 4
 _MAX_CPU_FUSED_SCORE_WORKERS = 16
 _CPU_PARALLEL_SCORE_BACKWARD_MIN_COORD_ELEMENTS = 8192
+_ROTAMER_BLOCK_PAIR_CANDIDATE_CHUNK = 1 << 20
 # Independent CUDA terms overlap profitably for one large pose or a wide batch,
 # but stream setup and coordination cost more than they save for small poses.
 _CUDA_PARALLEL_SCORE_MIN_COORD_ELEMENTS = 20 * 1024
@@ -1684,8 +1685,10 @@ class _FusedLJLKAndElecRotamerFunction(torch.autograd.Function):
     def forward(ctx, *args):
         from tmol.score.ljlk.potentials import ljlk_elec_weighted_rotamer_scores
 
-        tensor_args = args[:-3]
-        max_dis, score_weights, empty_dispatch = args[-3:]
+        tensor_args = args[:-5]
+        max_dis, score_weights, empty_dispatch, candidate_begin, candidate_end = args[
+            -5:
+        ]
         empty_gradients = score_weights.new_empty(0)
         scores, indices, _ = ljlk_elec_weighted_rotamer_scores(
             *tensor_args,
@@ -1693,6 +1696,8 @@ class _FusedLJLKAndElecRotamerFunction(torch.autograd.Function):
             score_weights,
             empty_gradients,
             empty_dispatch,
+            candidate_begin,
+            candidate_end,
         )
         saved_tensors = []
         ctx.scalar_args = {}
@@ -1717,7 +1722,12 @@ class _FusedLJLKAndElecRotamerFunction(torch.autograd.Function):
             for index in range(ctx.n_inputs)
         ]
         _, _, coord_gradients = ljlk_elec_weighted_rotamer_scores(
-            *args[:-1], score_gradients.reshape(-1), dispatch_indices
+            *args[:-4],
+            args[-4],
+            score_gradients.reshape(-1),
+            dispatch_indices,
+            0,
+            -1,
         )
         return (coord_gradients,) + (None,) * (ctx.n_inputs - 1)
 
@@ -1767,13 +1777,58 @@ class _FusedLJLKAndElecRotamerModule(torch.nn.Module):
             *self._native_arguments(coords),
             score_weights,
             self.ljlk_module._empty_dispatch_indices,
+            0,
+            -1,
         )
         if torch.is_grad_enabled() and coords.requires_grad:
             return _FusedLJLKAndElecRotamerFunction.apply(*args)
         scores, indices, _ = ljlk_elec_weighted_rotamer_scores(
-            *args[:-1], score_weights.new_empty(0), args[-1]
+            *args[:-4],
+            args[-4],
+            score_weights.new_empty(0),
+            args[-3],
+            args[-2],
+            args[-1],
         )
         return scores, indices
+
+    def iter_score_chunks(self, coords, score_weights):
+        """Yield canonical weighted score chunks over block-pair candidates."""
+        from tmol.score.ljlk.potentials import ljlk_elec_weighted_rotamer_scores
+
+        if score_weights.dtype != coords.dtype:
+            score_weights = score_weights.to(dtype=coords.dtype)
+        native_args = self._native_arguments(coords)
+        first_rot_block_type = native_args[4]
+        n_poses, max_n_blocks = first_rot_block_type.shape
+        n_candidates = n_poses * max_n_blocks * (max_n_blocks + 1) // 2
+        candidate_begins = range(
+            0, max(1, n_candidates), _ROTAMER_BLOCK_PAIR_CANDIDATE_CHUNK
+        )
+        for candidate_begin in candidate_begins:
+            candidate_end = min(
+                candidate_begin + _ROTAMER_BLOCK_PAIR_CANDIDATE_CHUNK,
+                n_candidates,
+            )
+            args = (
+                *native_args,
+                score_weights,
+                self.ljlk_module._empty_dispatch_indices,
+                candidate_begin,
+                candidate_end,
+            )
+            if torch.is_grad_enabled() and coords.requires_grad:
+                yield _FusedLJLKAndElecRotamerFunction.apply(*args)
+            else:
+                scores, indices, _ = ljlk_elec_weighted_rotamer_scores(
+                    *args[:-4],
+                    args[-4],
+                    score_weights.new_empty(0),
+                    args[-3],
+                    args[-2],
+                    args[-1],
+                )
+                yield scores, indices
 
 
 def _fused_ljlk_elec_rotamer_module(term_modules):
@@ -1901,6 +1956,18 @@ class RotamerScoringModule:
             )
             if already_weighted:
                 assert score_weights is not None
+                if not retain_shared_dispatch and hasattr(term, "iter_score_chunks"):
+                    chunk_results = iter(term.iter_score_chunks(coords, score_weights))
+                    try:
+                        result = next(chunk_results)
+                    except StopIteration:
+                        continue
+                    for next_result in chunk_results:
+                        yield term, result, already_weighted, False
+                        result = next_result
+                    yield term, result, already_weighted, True
+                    del result
+                    continue
                 result = term(coords, score_weights)
             elif shared_dispatch is not None:
                 result = term.forward(coords, shared_dispatch)
@@ -1915,7 +1982,7 @@ class RotamerScoringModule:
                 and cutoff is not None
             ):
                 dispatch_by_key.setdefault(dispatch_key, []).append((cutoff, result[1]))
-            yield term, result, already_weighted
+            yield term, result, already_weighted, True
             # The consumer has retained the weighted values. Release the raw
             # lanes before the next native call allocates another score table.
             del result
@@ -1973,7 +2040,9 @@ class RotamerScoringModule:
         established dispatch reuse and consume this iterator into their current
         aggregate representation.
         """
-        if not torch.is_grad_enabled() and coords.requires_grad:
+        if (
+            not retain_shared_dispatch or not torch.is_grad_enabled()
+        ) and coords.requires_grad:
             coords = coords.detach()
 
         use_fused = (
@@ -1988,7 +2057,7 @@ class RotamerScoringModule:
             retain_shared_dispatch=retain_shared_dispatch,
         )
         weights_offset = 0
-        for term, (scores, indices), already_weighted in term_results:
+        for term, (scores, indices), already_weighted, term_complete in term_results:
             n_subterms = term.n_score_types if already_weighted else scores.shape[0]
             indices = self._native_sparse_indices(indices)
             if already_weighted:
@@ -1998,7 +2067,8 @@ class RotamerScoringModule:
                     weights_offset : weights_offset + n_subterms, 0, 0, 0
                 ]
                 weighted_values = _weighted_score_sum(weights, scores)
-            weights_offset += n_subterms
+            if term_complete:
+                weights_offset += n_subterms
             yield term, indices, weighted_values
             del scores, indices, weighted_values
 

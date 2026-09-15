@@ -295,10 +295,10 @@ def test_streaming_graph_preserves_assignments_and_rng_advancement():
 def test_streaming_graph_memory_is_bounded_by_one_layout():
     """Do not retain every large duplicate term layout across either pass."""
     device = torch.device("cuda")
-    counts = [[2] * 128]
+    counts = [[2] * 129]
     metadata = graph_metadata(counts, device)
     edge_entries, edge_values = score_entries(
-        metadata, [(0, block, block + 1) for block in range(127)]
+        metadata, [(0, block, block + 1) for block in range(128)]
     )
     repeats = 4000
     n_terms = 6

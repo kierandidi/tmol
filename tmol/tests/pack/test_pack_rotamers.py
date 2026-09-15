@@ -484,7 +484,7 @@ def test_shared_rotamer_dispatch_matches_independent_hbond_layout(
 
 
 def test_weighted_fused_ljlk_elec_rotamer_scores_match_fallback(
-    default_database, ubq_pdb, dun_sampler, torch_device
+    default_database, ubq_pdb, dun_sampler, torch_device, monkeypatch
 ):
     pose = pose_stack_from_pdb(ubq_pdb, torch_device, residue_start=0, residue_end=10)
     pose_stack, task = setup_pose_stack_and_task([pose], torch_device, dun_sampler)
@@ -508,9 +508,43 @@ def test_weighted_fused_ljlk_elec_rotamer_scores_match_fallback(
     assert torch.equal(fused.indices(), separate.indices())
     torch.testing.assert_close(fused.values(), separate.values(), atol=2e-3, rtol=2e-5)
 
+    from tmol.score import _score_function
+
+    weight_begin = scorer._fused_ljlk_elec_weight_offset
+    fused_weights = scorer.weights[weight_begin : weight_begin + 4, 0, 0, 0]
+    monkeypatch.setattr(_score_function, "_ROTAMER_BLOCK_PAIR_CANDIDATE_CHUNK", 8)
+    full_scores, full_indices = fused_group(rotamer_set.coords, fused_weights)
+    chunks = list(fused_group.iter_score_chunks(rotamer_set.coords, fused_weights))
+    chunk_scores = torch.cat([scores for scores, _ in chunks], dim=1)
+    chunk_indices = torch.cat([indices for _, indices in chunks], dim=1)
+    assert len(chunks) > 1
+    assert torch.equal(chunk_indices, full_indices)
+    assert torch.equal(chunk_scores, full_scores)
+
+    full_coords = rotamer_set.coords.detach().double().requires_grad_(True)
+    full_scores, _ = fused_group(full_coords, fused_weights)
+    upstream = torch.linspace(
+        0.25, 1.25, full_scores.numel(), device=torch_device, dtype=torch.double
+    )
+    (full_gradient,) = torch.autograd.grad(
+        (full_scores.reshape(-1) * upstream).sum(), full_coords
+    )
+    chunk_coords = rotamer_set.coords.detach().double().requires_grad_(True)
+    chunk_scores = torch.cat(
+        [
+            scores
+            for scores, _ in fused_group.iter_score_chunks(chunk_coords, fused_weights)
+        ],
+        dim=1,
+    )
+    (chunk_gradient,) = torch.autograd.grad(
+        (chunk_scores.reshape(-1) * upstream).sum(), chunk_coords
+    )
+    torch.testing.assert_close(chunk_scores, full_scores)
+    torch.testing.assert_close(chunk_gradient, full_gradient)
+
     # Weights are read at every call instead of being specialized into the
     # rendered module.
-    weight_begin = scorer._fused_ljlk_elec_weight_offset
     original_fused_weights = scorer.weights[
         weight_begin : weight_begin + 4, 0, 0, 0
     ].clone()
@@ -620,7 +654,15 @@ def test_fused_ljlk_elec_empty_table_gradient(monkeypatch):
 
     calls = []
 
-    def empty_scores(coords, _max_dis, _weights, output_gradients, dispatch):
+    def empty_scores(
+        coords,
+        _max_dis,
+        _weights,
+        output_gradients,
+        dispatch,
+        _candidate_begin,
+        _candidate_end,
+    ):
         calls.append((output_gradients.shape, dispatch.shape))
         indices = torch.empty((3, 0), dtype=torch.int32, device=coords.device)
         coord_gradients = (
@@ -635,7 +677,7 @@ def test_fused_ljlk_elec_empty_table_gradient(monkeypatch):
     weights = torch.ones(4)
     empty_dispatch = torch.empty((0, 0), dtype=torch.int32)
     scores, _ = _score_function._FusedLJLKAndElecRotamerFunction.apply(
-        coords, 6.0, weights, empty_dispatch
+        coords, 6.0, weights, empty_dispatch, 0, -1
     )
     scores.sum().backward()
 

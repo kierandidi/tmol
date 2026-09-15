@@ -1095,7 +1095,9 @@ std::vector<Tensor> ljlk_elec_weighted_rotamer_scores_op(
     double max_dis,
     Tensor score_weights,
     Tensor output_gradients,
-    Tensor shared_dispatch_indices) {
+    Tensor shared_dispatch_indices,
+    int64_t candidate_begin,
+    int64_t candidate_end) {
   TORCH_CHECK(
       !torch::GradMode::is_enabled()
           || (!rot_coords.requires_grad() && !score_weights.requires_grad()),
@@ -1172,7 +1174,9 @@ std::vector<Tensor> ljlk_elec_weighted_rotamer_scores_op(
                     (Real)max_dis,
                     TCAST(score_weights),
                     TCAST(output_gradients),
-                    TCAST(shared_dispatch_indices));
+                    TCAST(shared_dispatch_indices),
+                    candidate_begin,
+                    candidate_end);
         score = std::get<0>(result).tensor.squeeze(1).squeeze(1);
         dscore_dcoords = std::get<1>(result).tensor.squeeze(0);
         dispatch_indices = std::get<2>(result).tensor;
