@@ -243,7 +243,8 @@ def test_streaming_graph_matches_existing(torch_device, counts, edges, duplicate
 
 def test_streaming_graph_resizes_sparse_chunk_topology(torch_device):
     """Preserve graph contents while growing the observed chunk-pair set."""
-    counts = [[64] * 40]
+    n_blocks = 160
+    counts = [[64] * n_blocks]
     metadata = graph_metadata(counts, torch_device)
     rot_offsets = metadata[3][0]
     entries = [
@@ -252,8 +253,8 @@ def test_streaming_graph_resizes_sparse_chunk_topology(torch_device):
             int(rot_offsets[first]) + first_chunk * 32,
             int(rot_offsets[second]) + second_chunk * 32,
         )
-        for first in range(40)
-        for second in range(first + 1, 40)
+        for first in range(n_blocks)
+        for second in range(first + 1, n_blocks)
         for first_chunk in range(2)
         for second_chunk in range(2)
     ]
