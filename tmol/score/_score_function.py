@@ -1776,17 +1776,12 @@ class _FusedLJLKAndElecRotamerModule(torch.nn.Module):
         )
         return scores, indices
 
-    def iter_packing_entries(self, coords, score_weights, *, topology_only):
-        """Yield bounded canonical dispatch windows for packing."""
-        from tmol.score.ljlk.potentials import (
-            ljlk_elec_rotamer_dispatch,
-            ljlk_elec_weighted_rotamer_scores,
-        )
+    def packing_dispatch(self, coords):
+        """Build the canonical fused rotamer-pair dispatch."""
+        from tmol.score.ljlk.potentials import ljlk_elec_rotamer_dispatch
 
-        if score_weights.dtype != coords.dtype:
-            score_weights = score_weights.to(dtype=coords.dtype)
         native_args = self._native_arguments(coords)
-        dispatch_indices = ljlk_elec_rotamer_dispatch(
+        return ljlk_elec_rotamer_dispatch(
             native_args[0],
             native_args[1],
             native_args[4],
@@ -1797,6 +1792,23 @@ class _FusedLJLKAndElecRotamerModule(torch.nn.Module):
             native_args[16],
             native_args[-1],
         )
+
+    def iter_packing_entries(
+        self,
+        coords,
+        score_weights,
+        *,
+        topology_only,
+        dispatch_indices=None,
+    ):
+        """Yield bounded canonical dispatch windows for packing."""
+        from tmol.score.ljlk.potentials import ljlk_elec_weighted_rotamer_scores
+
+        if score_weights.dtype != coords.dtype:
+            score_weights = score_weights.to(dtype=coords.dtype)
+        native_args = self._native_arguments(coords)
+        if dispatch_indices is None:
+            dispatch_indices = self.packing_dispatch(coords)
         empty_values = score_weights.new_empty(0)
         for begin in range(
             0, dispatch_indices.shape[1], _PACK_FUSED_ROTAMER_SCORE_WINDOW
@@ -2027,15 +2039,54 @@ class RotamerScoringModule:
         )
         execution_terms = self._execution_terms(use_fused)
         if not retain_shared_dispatch and use_fused:
+            packing_dispatch = self._fused_ljlk_elec.packing_dispatch(coords)
+            dispatch_by_key = {
+                self._fused_ljlk_elec.rotamer_dispatch_key: [
+                    (
+                        self._fused_ljlk_elec.block_neighbor_cutoff,
+                        packing_dispatch,
+                    )
+                ]
+            }
             weights_offset = 0
             for term, score_weights, already_weighted in execution_terms:
                 if already_weighted:
                     assert score_weights is not None
                     for indices, weighted_values in term.iter_packing_entries(
-                        coords, score_weights, topology_only=topology_only
+                        coords,
+                        score_weights,
+                        topology_only=topology_only,
+                        dispatch_indices=packing_dispatch,
                     ):
                         yield term, indices, weighted_values
                     weights_offset += term.n_score_types
+                    continue
+
+                shared_dispatch = self._compatible_dispatch(
+                    term, dispatch_by_key, coords.device.type
+                )
+                if shared_dispatch is not None:
+                    n_subterms = term.n_score_types
+                    weights = self.weights[
+                        weights_offset : weights_offset + n_subterms, 0, 0, 0
+                    ]
+                    weights_offset += n_subterms
+                    empty_values = weights.new_empty(0)
+                    for begin in range(
+                        0,
+                        shared_dispatch.shape[1],
+                        _PACK_FUSED_ROTAMER_SCORE_WINDOW,
+                    ):
+                        indices = shared_dispatch[
+                            :, begin : begin + _PACK_FUSED_ROTAMER_SCORE_WINDOW
+                        ]
+                        if topology_only:
+                            yield term, indices, empty_values
+                            continue
+                        scores, indices = term.forward(coords, indices)
+                        weighted_values = _weighted_score_sum(weights, scores)
+                        yield term, indices, weighted_values
+                        del scores, indices, weighted_values
                     continue
 
                 scores, indices = term.forward(coords)
