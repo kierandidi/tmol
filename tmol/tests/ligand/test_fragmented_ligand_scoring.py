@@ -140,7 +140,6 @@ def _build(structure, params_path, torch_device, *, fragmented):
         prepare_ligands=True,
         ligand_params_files=[str(params_path)],
         no_optH=True,
-        sample_proton_chi=False,
         param_db=ParameterDatabase.get_default(),
         return_context=True,
     )
@@ -283,7 +282,6 @@ def test_fragmentation_uses_ligand_already_in_parameter_database(torch_device):
         param_db=whole_context.parameter_database,
         prepare_ligands=True,
         no_optH=True,
-        sample_proton_chi=False,
     )
 
     pbt = pose.packed_block_types
@@ -538,7 +536,7 @@ def test_pose_stack_builder_preserves_fragment_mapping(torch_device):
         )
 
 
-def test_fragmented_ligand_minimize_and_pack_e2e():
+def test_fragmented_ligand_minimize_and_pack_e2e(torch_device):
     from tmol import run_cart_min
     from tmol.ops import (
         build_coord_mask_for_mask_and_interacting_atoms,
@@ -549,7 +547,6 @@ def test_fragmented_ligand_minimize_and_pack_e2e():
         calculate_fragment_interactions,
     )
 
-    torch_device = torch.device("cpu")
     structure, params_path, preparation = _load_fixture()
     annotated = _annotate_at_bridge(structure, preparation)
     pose, context, mapping = _build(
@@ -603,14 +600,15 @@ def test_fragmented_ligand_minimize_and_pack_e2e():
         ("ace", "multi"),
     ],
 )
-def test_fragmented_ligand_ddg_and_total_pose_parity(target, fragmentation):
+def test_fragmented_ligand_ddg_and_total_pose_parity(
+    target, fragmentation, torch_device
+):
     from tmol.ops import calculate_block_pair_ddg
     from tmol.score import (
         beta2016_score_function,
         calculate_fragment_interactions,
     )
 
-    torch_device = torch.device("cpu")
     structure, params_path, preparation = _load_fixture(target)
     annotated = (
         _annotate_at_bridge(structure, preparation)
