@@ -188,6 +188,10 @@ class _DefaultCartesianMinimizer:
             optimizer_kwargs={"verbose": verbose},
         )
 
+    def release_rendered_network(self) -> None:
+        """Release topology-dependent scoring state before a large CUDA pack."""
+        self.minimizer.network = None
+
 
 def _resolve_cuda_graph_mode(pose_stack: PoseStack, cuda_graph: bool | None) -> bool:
     """Choose graph replay automatically where launch overhead dominates."""
@@ -395,6 +399,14 @@ def relax_pack_min_step(
     if verbose:
         synchronize_device(pose_stack.device)
     end_time1 = time.perf_counter()
+    if (
+        pose_stack.device.type == "cuda"
+        and pose_stack.max_n_blocks > 256
+        and not task.bump_check
+        and isinstance(min_fn, _DefaultCartesianMinimizer)
+    ):
+        min_fn.release_rendered_network()
+        torch.cuda.empty_cache()
     packed_pose_stack = pack_rotamers(pose_stack, sfxn, task, verbose)
 
     sfxn.set_weight(ScoreType.fa_ljrep, fa_rep_min_weight)
