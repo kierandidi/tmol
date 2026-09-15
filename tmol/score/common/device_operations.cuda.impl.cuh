@@ -88,16 +88,6 @@ struct DeviceOperations<tmol::Device::CUDA> {
 #endif
   }
 
-  static EIGEN_DEVICE_FUNC int64_t atomic_add(int64_t& target, int64_t value) {
-#ifdef __CUDA_ARCH__
-    return static_cast<int64_t>(atomicAdd(
-        reinterpret_cast<unsigned long long*>(&target),
-        static_cast<unsigned long long>(value)));
-#else
-    return 0;
-#endif
-  }
-
   template <typename Int, typename Func>
   static void foreach_combination_triple(
       ContextManager& mgr, Int dim1, Int dim2, Int dim3, Func f) {

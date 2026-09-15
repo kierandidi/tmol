@@ -113,46 +113,35 @@ def staged_graph(metadata, term_entries, chunk_size):
     )
     for indices, values in term_entries:
         while True:
-            topology[5].zero_()
-            topology[:6] = note_interaction_graph_topology(
+            topology[4].zero_()
+            topology[:5] = note_interaction_graph_topology(
                 chunk_size,
                 metadata[2],
                 metadata[3],
                 metadata[6],
+                topology[5],
                 topology[6],
-                topology[7],
                 topology[0],
                 topology[1],
                 topology[2],
                 topology[3],
                 topology[4],
-                topology[5],
                 indices,
                 values,
             )
-            hash_overflow, support_overflow = topology[5].tolist()
-            if not hash_overflow and not support_overflow:
+            if not topology[4].item():
                 break
-            if hash_overflow:
-                topology[1], topology[2] = resize_interaction_graph_topology(
-                    topology[1],
-                    topology[2],
-                    topology[1].numel() * 2,
-                    values,
-                )
-            if support_overflow:
-                new_capacity = topology[3].numel() * 2
-                while new_capacity < topology[4].item():
-                    new_capacity *= 2
-                resized = torch.zeros(
-                    new_capacity, dtype=topology[3].dtype, device=device
-                )
-                resized[: topology[3].numel()].copy_(topology[3])
-                topology[3] = resized
+            topology[1:4] = resize_interaction_graph_topology(
+                topology[1],
+                topology[2],
+                topology[3],
+                topology[1].numel() * 2,
+                values,
+            )
     base[11:16] = finalize_interaction_graph_topology(
         chunk_size,
         base[4],
-        topology[7],
+        topology[6],
         *topology[:4],
         empty_values,
     )
@@ -162,7 +151,7 @@ def staged_graph(metadata, term_entries, chunk_size):
             metadata[2],
             metadata[3],
             metadata[6],
-            topology[6],
+            topology[5],
             base[7],
             base[4],
             base[5],

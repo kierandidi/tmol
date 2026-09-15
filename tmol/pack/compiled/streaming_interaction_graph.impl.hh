@@ -15,6 +15,9 @@ namespace tmol {
 namespace pack {
 namespace compiled {
 
+constexpr int CHUNK_SUPPORT_PAGE_BITS = 1024;
+constexpr int CHUNK_SUPPORT_PAGE_WORDS = CHUNK_SUPPORT_PAGE_BITS / 32;
+
 EIGEN_DEVICE_FUNC inline uint64_t block_pair_hash(uint64_t key) {
   key += 0x9e3779b97f4a7c15ull;
   key = (key ^ (key >> 30)) * 0xbf58476d1ce4e5b9ull;
@@ -36,8 +39,7 @@ auto StreamingInteractionGraph<DeviceDispatch, D, Real, Int>::initialize(
         TPack<int32_t, 3, D>,
         TPack<int64_t, 1, D>,
         TPack<int64_t, 1, D>,
-        TPack<int32_t, 1, D>,
-        TPack<int64_t, 1, D>,
+        TPack<int32_t, 2, D>,
         TPack<int32_t, 1, D>,
         TPack<int64_t, 2, D>,
         TPack<int64_t, 2, D>> {
@@ -78,20 +80,19 @@ auto StreamingInteractionGraph<DeviceDispatch, D, Real, Int>::initialize(
   while (hash_capacity < initial_target) {
     hash_capacity *= 2;
   }
-  auto block_pair_keys_tp =
+  auto support_block_pair_keys_tp =
       TPack<int64_t, 1, D>::full({hash_capacity}, int64_t(-1));
-  auto block_pair_support_offsets_tp =
+  auto support_page_keys_tp =
       TPack<int64_t, 1, D>::full({hash_capacity}, int64_t(-1));
-  auto chunk_support_tp = TPack<int32_t, 1, D>::zeros({hash_capacity * 4});
-  auto chunk_support_cursor_tp = TPack<int64_t, 1, D>::zeros({1});
-  auto topology_overflow_tp = TPack<int32_t, 1, D>::zeros({2});
+  auto chunk_support_pages_tp =
+      TPack<int32_t, 2, D>::zeros({hash_capacity, CHUNK_SUPPORT_PAGE_WORDS});
+  auto topology_overflow_tp = TPack<int32_t, 1, D>::zeros({1});
 
   return {
       block_adjacency_tp,
-      block_pair_keys_tp,
-      block_pair_support_offsets_tp,
-      chunk_support_tp,
-      chunk_support_cursor_tp,
+      support_block_pair_keys_tp,
+      support_page_keys_tp,
+      chunk_support_pages_tp,
       topology_overflow_tp,
       orig_block_to_molten_tp,
       molten_block_chunk_offset_tp};
@@ -111,10 +112,9 @@ void StreamingInteractionGraph<DeviceDispatch, D, Real, Int>::note(
     TView<int64_t, 2, D> orig_block_to_molten,
     TView<int64_t, 2, D> molten_block_chunk_offset,
     TView<int32_t, 3, D> block_adjacency,
-    TView<int64_t, 1, D> block_pair_keys,
-    TView<int64_t, 1, D> block_pair_support_offsets,
-    TView<int32_t, 1, D> chunk_support,
-    TView<int64_t, 1, D> chunk_support_cursor,
+    TView<int64_t, 1, D> support_block_pair_keys,
+    TView<int64_t, 1, D> support_page_keys,
+    TView<int32_t, 2, D> chunk_support_pages,
     TView<int32_t, 1, D> topology_overflow,
     TView<int32_t, 2, D> sparse_inds) {
   int64_t const n_entries = sparse_inds.size(1);
@@ -163,53 +163,48 @@ void StreamingInteractionGraph<DeviceDispatch, D, Real, Int>::note(
         uint64_t(pose) * max_n_molten_blocks + first_molten;
     uint64_t const global_second =
         uint64_t(pose) * max_n_molten_blocks + second_molten;
-    int64_t const key = int64_t((global_first << 32) | global_second);
-    int64_t const capacity = block_pair_keys.size(0);
-    uint64_t slot = block_pair_hash(uint64_t(key)) & uint64_t(capacity - 1);
+    int64_t const block_pair_key =
+        int64_t((global_first << 32) | global_second);
+    int const first_chunk =
+        (first_rot - rot_offset_for_block[pose][first_block]) / chunk_size;
+    int const second_chunk =
+        (second_rot - rot_offset_for_block[pose][second_block]) / chunk_size;
+    int const n_second_chunks =
+        (n_rots_for_block[pose][second_block] - 1) / chunk_size + 1;
+    int64_t const support_bit =
+        int64_t(first_chunk) * n_second_chunks + second_chunk;
+    int64_t const support_page = support_bit / CHUNK_SUPPORT_PAGE_BITS;
+    int const page_bit = support_bit % CHUNK_SUPPORT_PAGE_BITS;
+    int64_t const capacity = support_block_pair_keys.size(0);
+    uint64_t slot =
+        block_pair_hash(
+            uint64_t(block_pair_key) ^ block_pair_hash(support_page))
+        & uint64_t(capacity - 1);
     for (int probe = 0; probe < 128; ++probe) {
-      int64_t prior = block_pair_keys[slot];
-      if (prior == -1) {
-        prior = DeviceDispatch<D>::compare_exchange(
-            block_pair_keys[slot], int64_t(-1), key);
+      int64_t prior_block_pair = support_block_pair_keys[slot];
+      if (prior_block_pair == -1) {
+        prior_block_pair = DeviceDispatch<D>::compare_exchange(
+            support_block_pair_keys[slot], int64_t(-1), block_pair_key);
       }
-      if (prior == -1) {
-        int const n_first_chunks =
-            (n_rots_for_block[pose][first_block] - 1) / chunk_size + 1;
-        int const n_second_chunks =
-            (n_rots_for_block[pose][second_block] - 1) / chunk_size + 1;
-        int64_t const support_words =
-            (int64_t(n_first_chunks) * n_second_chunks + 31) / 32;
-        int64_t const support_offset = DeviceDispatch<D>::atomic_add(
-            chunk_support_cursor[0], support_words);
+      if (prior_block_pair == -1) {
         DeviceDispatch<D>::store_idempotent(
-            block_pair_support_offsets[slot], support_offset);
+            support_page_keys[slot], support_page);
       }
-      if (prior == -1 || prior == key) {
-        int64_t support_offset = DeviceDispatch<D>::compare_exchange(
-            block_pair_support_offsets[slot], int64_t(-1), int64_t(-1));
-        while (support_offset == -1) {
-          support_offset = DeviceDispatch<D>::compare_exchange(
-              block_pair_support_offsets[slot], int64_t(-1), int64_t(-1));
+      if (prior_block_pair == -1 || prior_block_pair == block_pair_key) {
+        int64_t prior_page = DeviceDispatch<D>::compare_exchange(
+            support_page_keys[slot], int64_t(-1), int64_t(-1));
+        while (prior_page == -1) {
+          prior_page = DeviceDispatch<D>::compare_exchange(
+              support_page_keys[slot], int64_t(-1), int64_t(-1));
         }
-        int const first_chunk =
-            (first_rot - rot_offset_for_block[pose][first_block]) / chunk_size;
-        int const second_chunk =
-            (second_rot - rot_offset_for_block[pose][second_block])
-            / chunk_size;
-        int const n_second_chunks =
-            (n_rots_for_block[pose][second_block] - 1) / chunk_size + 1;
-        int64_t const support_bit =
-            int64_t(first_chunk) * n_second_chunks + second_chunk;
-        int64_t const support_word = support_offset + support_bit / 32;
-        if (support_word >= chunk_support.size(0)) {
-          DeviceDispatch<D>::store_idempotent(topology_overflow[1], int32_t(1));
+        if (prior_page == support_page) {
+          int const support_word = page_bit / 32;
+          int32_t const support_mask =
+              int32_t(uint32_t(1) << static_cast<int>(page_bit % 32));
+          DeviceDispatch<D>::bitwise_or(
+              chunk_support_pages[slot][support_word], support_mask);
           return;
         }
-        int32_t const support_mask =
-            int32_t(uint32_t(1) << static_cast<int>(support_bit % 32));
-        DeviceDispatch<D>::bitwise_or(
-            chunk_support[support_word], support_mask);
-        return;
       }
       slot = (slot + 1) & uint64_t(capacity - 1);
     }
@@ -225,33 +220,59 @@ template <
     typename Real,
     typename Int>
 auto StreamingInteractionGraph<DeviceDispatch, D, Real, Int>::
-    resize_block_pair_hash(
+    resize_chunk_support_hash(
         ContextManager& mgr,
-        TView<int64_t, 1, D> old_block_pair_keys,
-        TView<int64_t, 1, D> old_block_pair_support_offsets,
+        TView<int64_t, 1, D> old_support_block_pair_keys,
+        TView<int64_t, 1, D> old_support_page_keys,
+        TView<int32_t, 2, D> old_chunk_support_pages,
         int64_t const new_capacity)
-        -> std::tuple<TPack<int64_t, 1, D>, TPack<int64_t, 1, D>> {
-  auto new_keys_tp = TPack<int64_t, 1, D>::full({new_capacity}, int64_t(-1));
-  auto new_offsets_tp = TPack<int64_t, 1, D>::full({new_capacity}, int64_t(-1));
-  auto new_keys = new_keys_tp.view;
-  auto new_offsets = new_offsets_tp.view;
+        -> std::tuple<
+            TPack<int64_t, 1, D>,
+            TPack<int64_t, 1, D>,
+            TPack<int32_t, 2, D>> {
+  auto new_block_keys_tp =
+      TPack<int64_t, 1, D>::full({new_capacity}, int64_t(-1));
+  auto new_page_keys_tp =
+      TPack<int64_t, 1, D>::full({new_capacity}, int64_t(-1));
+  auto new_support_pages_tp =
+      TPack<int32_t, 2, D>::zeros({new_capacity, CHUNK_SUPPORT_PAGE_WORDS});
+  auto new_block_keys = new_block_keys_tp.view;
+  auto new_page_keys = new_page_keys_tp.view;
+  auto new_support_pages = new_support_pages_tp.view;
   LAUNCH_BOX_32;
   auto rehash = ([=] TMOL_DEVICE_FUNC(int index) {
-    int64_t const key = old_block_pair_keys[index];
-    if (key == -1) {
+    int64_t const block_pair_key = old_support_block_pair_keys[index];
+    if (block_pair_key == -1) {
       return;
     }
-    uint64_t slot = block_pair_hash(uint64_t(key)) & uint64_t(new_capacity - 1);
+    int64_t const support_page = old_support_page_keys[index];
+    uint64_t slot =
+        block_pair_hash(
+            uint64_t(block_pair_key) ^ block_pair_hash(support_page))
+        & uint64_t(new_capacity - 1);
     while (true) {
-      int64_t const prior =
-          DeviceDispatch<D>::compare_exchange(new_keys[slot], int64_t(-1), key);
-      if (prior == -1) {
-        DeviceDispatch<D>::store_idempotent(
-            new_offsets[slot], old_block_pair_support_offsets[index]);
+      int64_t prior_block_pair = new_block_keys[slot];
+      if (prior_block_pair == -1) {
+        prior_block_pair = DeviceDispatch<D>::compare_exchange(
+            new_block_keys[slot], int64_t(-1), block_pair_key);
+      }
+      if (prior_block_pair == -1) {
+        DeviceDispatch<D>::store_idempotent(new_page_keys[slot], support_page);
+        for (int word = 0; word < CHUNK_SUPPORT_PAGE_WORDS; ++word) {
+          new_support_pages[slot][word] = old_chunk_support_pages[index][word];
+        }
         return;
       }
-      if (prior == key) {
-        return;
+      if (prior_block_pair == block_pair_key) {
+        int64_t prior_page = DeviceDispatch<D>::compare_exchange(
+            new_page_keys[slot], int64_t(-1), int64_t(-1));
+        while (prior_page == -1) {
+          prior_page = DeviceDispatch<D>::compare_exchange(
+              new_page_keys[slot], int64_t(-1), int64_t(-1));
+        }
+        if (prior_page == support_page) {
+          return;
+        }
       }
       slot = (slot + 1) & uint64_t(new_capacity - 1);
     }
@@ -259,10 +280,10 @@ auto StreamingInteractionGraph<DeviceDispatch, D, Real, Int>::
   DeviceDispatch<D>::template forall_independent<launch_t>(
       mgr,
       score::common::checked_dispatch_size(
-          old_block_pair_keys.size(0),
+          old_support_block_pair_keys.size(0),
           "streaming interaction-graph hash resize"),
       rehash);
-  return {new_keys_tp, new_offsets_tp};
+  return {new_block_keys_tp, new_page_keys_tp, new_support_pages_tp};
 }
 
 template <
@@ -276,9 +297,9 @@ auto StreamingInteractionGraph<DeviceDispatch, D, Real, Int>::finalize(
     TView<Int, 2, D> n_bc_rots_for_molten_block,
     TView<int64_t, 2, D> molten_block_chunk_offset,
     TView<int32_t, 3, D> block_adjacency,
-    TView<int64_t, 1, D> block_pair_keys,
-    TView<int64_t, 1, D> block_pair_support_offsets,
-    TView<int32_t, 1, D> chunk_support)
+    TView<int64_t, 1, D> support_block_pair_keys,
+    TView<int64_t, 1, D> support_page_keys,
+    TView<int32_t, 2, D> chunk_support_pages)
     -> std::tuple<
         TPack<int64_t, 1, D>,
         TPack<int32_t, 1, D>,
@@ -318,24 +339,31 @@ auto StreamingInteractionGraph<DeviceDispatch, D, Real, Int>::finalize(
             uint64_t(pose) * max_n_molten_blocks + first_block;
         uint64_t const global_second =
             uint64_t(pose) * max_n_molten_blocks + second_block;
-        int64_t const key = int64_t((global_first << 32) | global_second);
-        int64_t const capacity = block_pair_keys.size(0);
-        uint64_t slot = block_pair_hash(uint64_t(key)) & uint64_t(capacity - 1);
+        int64_t const block_pair_key =
+            int64_t((global_first << 32) | global_second);
+        int const n_second_rots =
+            n_bc_rots_for_molten_block[pose][second_block];
+        int const n_second_chunks = (n_second_rots - 1) / chunk_size + 1;
+        int64_t const support_bit =
+            int64_t(first_chunk) * n_second_chunks + second_chunk;
+        int64_t const support_page = support_bit / CHUNK_SUPPORT_PAGE_BITS;
+        int const page_bit = support_bit % CHUNK_SUPPORT_PAGE_BITS;
+        int64_t const capacity = support_block_pair_keys.size(0);
+        uint64_t slot =
+            block_pair_hash(
+                uint64_t(block_pair_key) ^ block_pair_hash(support_page))
+            & uint64_t(capacity - 1);
         for (int64_t probe = 0; probe < capacity; ++probe) {
-          int64_t const prior = block_pair_keys[slot];
-          if (prior == key) {
-            int const n_second_rots =
-                n_bc_rots_for_molten_block[pose][second_block];
-            int const n_second_chunks = (n_second_rots - 1) / chunk_size + 1;
-            int64_t const support_bit =
-                int64_t(first_chunk) * n_second_chunks + second_chunk;
-            int64_t const support_word =
-                block_pair_support_offsets[slot] + support_bit / 32;
+          int64_t const prior_block_pair = support_block_pair_keys[slot];
+          if (prior_block_pair == block_pair_key
+              && support_page_keys[slot] == support_page) {
+            int const support_word = page_bit / 32;
             int32_t const support_mask =
-                int32_t(uint32_t(1) << static_cast<int>(support_bit % 32));
-            return (chunk_support[support_word] & support_mask) != 0;
+                int32_t(uint32_t(1) << static_cast<int>(page_bit % 32));
+            return (chunk_support_pages[slot][support_word] & support_mask)
+                   != 0;
           }
-          if (prior == -1) {
+          if (prior_block_pair == -1) {
             return false;
           }
           slot = (slot + 1) & uint64_t(capacity - 1);

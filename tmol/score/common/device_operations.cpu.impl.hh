@@ -81,10 +81,6 @@ struct DeviceOperations<tmol::Device::CPU> {
     return expected;
   }
 
-  static EIGEN_DEVICE_FUNC int64_t atomic_add(int64_t& target, int64_t value) {
-    return __atomic_fetch_add(&target, value, __ATOMIC_RELAXED);
-  }
-
   template <typename Int, typename Func>
   static void foreach_combination_triple(
       ContextManager&, Int dim1, Int dim2, Int dim3, Func f) {
