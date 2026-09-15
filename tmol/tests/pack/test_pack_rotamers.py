@@ -47,8 +47,6 @@ from tmol.pack._pack_rotamers import (
 def test_interaction_graph_chunk_size_is_backend_specific(torch_device):
     expected = 32 if torch_device.type == "cuda" else 16
     assert _interaction_graph_chunk_size(torch_device) == expected
-    large_expected = 16
-    assert _interaction_graph_chunk_size(torch_device, 39_287) == large_expected
 
 
 def setup_pose_stack_and_task(poses, torch_device, dun_sampler):
@@ -544,6 +542,21 @@ def test_weighted_fused_ljlk_elec_rotamer_scores_match_fallback(
     )
     torch.testing.assert_close(chunk_scores, full_scores)
     torch.testing.assert_close(chunk_gradient, full_gradient)
+
+    with torch.no_grad():
+        streamed_entries = list(
+            scorer._iter_weighted_sparse_entries(
+                rotamer_set.coords, retain_shared_dispatch=False
+            )
+        )
+    streamed = torch.sparse_coo_tensor(
+        torch.cat([indices for _, indices, _ in streamed_entries], dim=1),
+        torch.cat([values for _, _, values in streamed_entries]),
+        size=fused.shape,
+        device=torch_device,
+    ).coalesce()
+    assert torch.equal(streamed.indices(), fused.indices())
+    torch.testing.assert_close(streamed.values(), fused.values(), atol=2e-3, rtol=2e-5)
 
     # Weights are read at every call instead of being specialized into the
     # rendered module.

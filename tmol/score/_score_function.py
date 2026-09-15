@@ -1948,6 +1948,7 @@ class RotamerScoringModule:
     ):
         """Evaluate terms in order, optionally retaining reusable dispatches."""
         dispatch_by_key = {}
+        chunk_dispatch_source = None
         for term, score_weights, already_weighted in execution_terms:
             shared_dispatch = (
                 self._compatible_dispatch(term, dispatch_by_key, coords.device.type)
@@ -1957,6 +1958,7 @@ class RotamerScoringModule:
             if already_weighted:
                 assert score_weights is not None
                 if not retain_shared_dispatch and hasattr(term, "iter_score_chunks"):
+                    chunk_dispatch_source = (term, score_weights)
                     chunk_results = iter(term.iter_score_chunks(coords, score_weights))
                     try:
                         result = next(chunk_results)
@@ -1969,6 +1971,33 @@ class RotamerScoringModule:
                     del result
                     continue
                 result = term(coords, score_weights)
+            elif (
+                not retain_shared_dispatch
+                and chunk_dispatch_source is not None
+                and getattr(term, "accepts_shared_dispatch", False)
+                and getattr(term, "rotamer_dispatch_key", None)
+                == chunk_dispatch_source[0].rotamer_dispatch_key
+                and _rotamer_dispatch_cutoff_compatible(
+                    coords.device.type,
+                    chunk_dispatch_source[0].block_neighbor_cutoff,
+                    term.block_neighbor_cutoff,
+                )
+            ):
+                source, source_weights = chunk_dispatch_source
+                chunk_results = iter(source.iter_score_chunks(coords, source_weights))
+                try:
+                    _, dispatch = next(chunk_results)
+                except StopIteration:
+                    continue
+                result = term.forward(coords, dispatch)
+                del dispatch
+                for _, next_dispatch in chunk_results:
+                    yield term, result, already_weighted, False
+                    result = term.forward(coords, next_dispatch)
+                    del next_dispatch
+                yield term, result, already_weighted, True
+                del result
+                continue
             elif shared_dispatch is not None:
                 result = term.forward(coords, shared_dispatch)
             else:
