@@ -1,3 +1,4 @@
+import gc
 import time
 import warnings
 from collections.abc import Callable, Sequence
@@ -191,6 +192,10 @@ class _DefaultCartesianMinimizer:
     def release_rendered_network(self) -> None:
         """Release topology-dependent scoring state before a large CUDA pack."""
         self.minimizer.network = None
+        self.minimizer.optimizer = None
+        self.minimizer._lbfgs_factory.optimizer = None
+        self.minimizer._lbfgs_factory.parameter = None
+        self.minimizer._lbfgs_factory.options = None
 
 
 def _resolve_cuda_graph_mode(pose_stack: PoseStack, cuda_graph: bool | None) -> bool:
@@ -406,6 +411,7 @@ def relax_pack_min_step(
         and isinstance(min_fn, _DefaultCartesianMinimizer)
     ):
         min_fn.release_rendered_network()
+        gc.collect()
         torch.cuda.empty_cache()
     packed_pose_stack = pack_rotamers(pose_stack, sfxn, task, verbose)
 
