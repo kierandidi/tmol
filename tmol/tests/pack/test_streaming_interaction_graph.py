@@ -359,11 +359,12 @@ def test_streaming_graph_memory_is_bounded_by_one_layout():
     class SyntheticScorer:
         def _iter_weighted_sparse_entries(self, coords, *, retain_shared_dispatch=True):
             assert not retain_shared_dispatch
+            assert not torch.is_grad_enabled()
             for term in range(n_terms):
                 yield (
                     term,
                     edge_entries.repeat(1, repeats),
-                    edge_values.repeat(repeats),
+                    edge_values.repeat(repeats) + coords.sum() * 0,
                 )
 
     torch.cuda.empty_cache()
@@ -371,7 +372,7 @@ def test_streaming_graph_memory_is_bounded_by_one_layout():
     allocated_before = torch.cuda.memory_allocated()
     graph = _build_streaming_interaction_graph(
         SyntheticScorer(),
-        torch.empty(0, device=device),
+        torch.zeros(1, device=device, requires_grad=True),
         32,
         (1, *metadata),
         False,
@@ -380,4 +381,5 @@ def test_streaming_graph_memory_is_bounded_by_one_layout():
     peak_delta = torch.cuda.max_memory_allocated() - allocated_before
 
     assert graph[15].numel() > 0
+    assert not any(tensor.requires_grad for tensor in graph)
     assert peak_delta < 4 * layout_bytes

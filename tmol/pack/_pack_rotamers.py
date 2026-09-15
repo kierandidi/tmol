@@ -518,46 +518,47 @@ def _build_streaming_interaction_graph(
 
     # Pass one records only topology. Disabling dispatch retention bounds live
     # score/index storage to the current term.
-    for _, indices, values in rotamer_scoring_module._iter_weighted_sparse_entries(
-        coords, retain_shared_dispatch=False
-    ):
-        while True:
-            topology_overflow.zero_()
-            (
-                block_adjacency,
-                support_block_pair_keys,
-                support_page_keys,
-                chunk_support_pages,
-                topology_overflow,
-            ) = note_interaction_graph_topology(
-                chunk_size,
-                n_rots_for_block,
-                rot_offset_for_block,
-                block_ind_for_rot,
-                orig_block_to_molten,
-                molten_block_chunk_offset,
-                block_adjacency,
-                support_block_pair_keys,
-                support_page_keys,
-                chunk_support_pages,
-                topology_overflow,
-                indices,
-                values,
-            )
-            if not topology_overflow.item():
-                break
-            (
-                support_block_pair_keys,
-                support_page_keys,
-                chunk_support_pages,
-            ) = resize_interaction_graph_topology(
-                support_block_pair_keys,
-                support_page_keys,
-                chunk_support_pages,
-                support_block_pair_keys.numel() * 2,
-                values,
-            )
-        del indices, values
+    with torch.no_grad():
+        for _, indices, values in rotamer_scoring_module._iter_weighted_sparse_entries(
+            coords, retain_shared_dispatch=False
+        ):
+            while True:
+                topology_overflow.zero_()
+                (
+                    block_adjacency,
+                    support_block_pair_keys,
+                    support_page_keys,
+                    chunk_support_pages,
+                    topology_overflow,
+                ) = note_interaction_graph_topology(
+                    chunk_size,
+                    n_rots_for_block,
+                    rot_offset_for_block,
+                    block_ind_for_rot,
+                    orig_block_to_molten,
+                    molten_block_chunk_offset,
+                    block_adjacency,
+                    support_block_pair_keys,
+                    support_page_keys,
+                    chunk_support_pages,
+                    topology_overflow,
+                    indices,
+                    values,
+                )
+                if not topology_overflow.item():
+                    break
+                (
+                    support_block_pair_keys,
+                    support_page_keys,
+                    chunk_support_pages,
+                ) = resize_interaction_graph_topology(
+                    support_block_pair_keys,
+                    support_page_keys,
+                    chunk_support_pages,
+                    support_block_pair_keys.numel() * 2,
+                    values,
+                )
+            del indices, values
 
     (
         base[11],
@@ -579,27 +580,28 @@ def _build_streaming_interaction_graph(
 
     # Pass two adds terms in the same canonical order. Native accumulation is
     # additive, preserving duplicate coordinates and CSR transpose symmetry.
-    for _, indices, values in rotamer_scoring_module._iter_weighted_sparse_entries(
-        coords, retain_shared_dispatch=False
-    ):
-        base[9], base[10], base[15] = accumulate_interaction_graph_entries(
-            chunk_size,
-            n_rots_for_block,
-            rot_offset_for_block,
-            block_ind_for_rot,
-            orig_block_to_molten,
-            base[7],
-            base[4],
-            base[5],
-            base[11],
-            base[12],
-            base[13],
-            base[14],
-            base[9],
-            base[10],
-            base[15],
-            indices,
-            values,
-        )
-        del indices, values
+    with torch.no_grad():
+        for _, indices, values in rotamer_scoring_module._iter_weighted_sparse_entries(
+            coords, retain_shared_dispatch=False
+        ):
+            base[9], base[10], base[15] = accumulate_interaction_graph_entries(
+                chunk_size,
+                n_rots_for_block,
+                rot_offset_for_block,
+                block_ind_for_rot,
+                orig_block_to_molten,
+                base[7],
+                base[4],
+                base[5],
+                base[11],
+                base[12],
+                base[13],
+                base[14],
+                base[9],
+                base[10],
+                base[15],
+                indices,
+                values,
+            )
+            del indices, values
     return tuple(base)
