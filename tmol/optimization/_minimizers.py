@@ -266,6 +266,13 @@ class CartesianMinimizer:
         self.last_optimizer_reused = False
         self._lbfgs_factory = _ReusableLBFGSFactory()
 
+    def release_cached_state(self) -> None:
+        """Release rendered scoring and optimizer state retained between calls."""
+        self.network = None
+        self.optimizer = None
+        self.last_optimizer_reused = False
+        self._lbfgs_factory = _ReusableLBFGSFactory()
+
     def __call__(
         self,
         pose_stack: PoseStack,

@@ -92,6 +92,17 @@ def test_cartesian_minimizer_reuses_compatible_network(
     assert minimizer.last_optimizer_reused
     torch.testing.assert_close(second.coords, first.coords)
 
+    minimizer.release_cached_state()
+    assert minimizer.network is None
+    assert minimizer.optimizer is None
+    assert not minimizer.last_optimizer_reused
+
+    rebuilt = minimizer(second_input, sfxn, optimizer_kwargs=kwargs)
+    assert minimizer.network is not network
+    assert minimizer.optimizer is not optimizer
+    assert not minimizer.last_optimizer_reused
+    torch.testing.assert_close(rebuilt.coords, first.coords)
+
 
 def test_run_kin_min_torch_lbfgs(
     jagged_stack_of_465_res_ubqs: PoseStack,

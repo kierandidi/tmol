@@ -167,6 +167,10 @@ class _DefaultCartesianMinimizer:
     def __init__(self, cuda_graph: bool):
         self.minimizer = CartesianMinimizer(cuda_graph=cuda_graph)
 
+    def release_cached_state(self) -> None:
+        """Release minimization buffers before a memory-intensive packing step."""
+        self.minimizer.release_cached_state()
+
     def __call__(
         self,
         pose_stack: PoseStack,
@@ -395,6 +399,8 @@ def relax_pack_min_step(
     if verbose:
         synchronize_device(pose_stack.device)
     end_time1 = time.perf_counter()
+    if isinstance(min_fn, _DefaultCartesianMinimizer):
+        min_fn.release_cached_state()
     packed_pose_stack = pack_rotamers(pose_stack, sfxn, task, verbose)
 
     sfxn.set_weight(ScoreType.fa_ljrep, fa_rep_min_weight)
