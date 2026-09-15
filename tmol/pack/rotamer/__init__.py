@@ -2,7 +2,12 @@
 
 # Import in topological order: dependencies before dependents.
 from ._bfs_sidechain import bfs_sidechain_atoms, bfs_sidechain_atoms_jit  # noqa: F401
-from ._conformer_sampler import ConformerSample, ConformerSampler  # noqa: F401
+from ._conformer_sampler import (  # noqa: F401
+    ConformerSample,
+    ConformerSampler,
+    chi_moving_roots,
+    sc_roots_for_chis,
+)
 from ._rotamer_set import RotamerSet  # noqa: F401
 from ._single_residue_kinforest import (  # noqa: F401
     PackedRotamerKintree,
@@ -23,9 +28,7 @@ from ._include_current_sampler import (  # noqa: F401
 from ._na_chi_sampler import (  # noqa: F401
     CHI_STEPS,
     MAX_SYN_WELL,
-    NA_PROTON_CHI_ROOT,
     NaChiRotamerSampler,
-    na_proton_chi_roots,
 )  # noqa: F401
 from ._mainchain_fingerprint import (  # noqa: F401
     AtomFingerprint,
@@ -39,9 +42,8 @@ from ._mainchain_fingerprint import (  # noqa: F401
 from ._fallback_sampler import FallbackSampler  # noqa: F401
 from ._opth_sampler import OptHSampler, OptHSamplerRTCache  # noqa: F401
 from ._build_rotamers import (  # noqa: F401
-    _build_chi4_atom_table,
-    _build_chi_phi_c_corrections,
-    _get_chi_dof_metadata,
+    _build_chi4_by_defining_atom,
+    _build_ring_chi_phi_c_corrections,
     annotate_everything,
     annotate_packed_block_types,
     annotate_restype,
@@ -58,7 +60,7 @@ from ._build_rotamers import (  # noqa: F401
     update_scan_starts,
     construct_kinforest_for_conformers,
     construct_scans_for_conformers,
-    correct_phi_c_for_jump_parents,
+    correct_phi_c_from_measured_chi,
     measure_dofs_from_orig_coords,
 )
 

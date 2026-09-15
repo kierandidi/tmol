@@ -12,10 +12,9 @@ from tmol.pose import (
     PackedBlockTypes,
     PoseStack,
 )
-from tmol.kinematics import KinForest
 from tmol.pack.rotamer import (
     ConformerSampler,
-    create_full_dof_inds_to_copy_from_orig_to_rotamers_for_include_current_sampler,
+    IncludeCurrentSampler,
 )
 
 
@@ -114,50 +113,25 @@ class FallbackSampler(ConformerSampler):
             )
 
         is_gbt_orig_block_type = task.per_block_considered_block_types_is_orig
+        all_samplers_disabled = ~task.per_block_conformer_sampler_allowed[
+            task.cons_bt_pose, task.cons_bt_block
+        ].any(dim=-1)
 
         n_rots_for_gbt = torch.logical_and(
             is_gbt_orig_block_type[
                 task.cons_bt_pose, task.cons_bt_block, task.cons_bt_which_block_type
             ],
             torch.logical_or(
-                gbt_block_allows_none, torch.logical_not(other_sampler_builds_for_gbt)
+                gbt_block_allows_none | all_samplers_disabled,
+                ~other_sampler_builds_for_gbt
+                & task.per_block_conformer_sampler_allowed[
+                    task.cons_bt_pose, task.cons_bt_block, self_ind_in_packer_task
+                ],
             ),
         ).to(torch.int32)
 
         gbt_for_rotamer = n_rots_for_gbt.nonzero(as_tuple=True)[0].to(torch.int32)
-        return (n_rots_for_gbt, gbt_for_rotamer, {})
+        return (n_rots_for_gbt, gbt_for_rotamer, {"copy_input_coordinates": True})
 
-    def fill_dofs_for_samples(
-        self,
-        pose_stack: PoseStack,
-        task: "SetPackerTask",  # noqa: F821
-        orig_kinforest: KinForest,
-        orig_dofs_kto: Tensor[torch.float32][:, 9],
-        gbt_for_conformer: Tensor[torch.int64][:],
-        block_type_ind_for_conformer: Tensor[torch.int64][:],
-        n_dof_atoms_offset_for_conformer: Tensor[torch.int64][:],
-        conformer_built_by_sampler: Tensor[torch.bool][:],
-        conf_inds_for_sampler: Tensor[torch.int64][:],
-        sampler_n_rots_for_gbt: Tensor[torch.int32][:],
-        sampler_gbt_for_rotamer: Tensor[torch.int32][:],
-        sample_dict: dict,
-        conf_dofs_kto: Tensor[torch.float32][:, 9],
-    ):
-        n_rots = sampler_gbt_for_rotamer.shape[0]
-        if n_rots == 0:
-            return
-
-        dst, src = (
-            create_full_dof_inds_to_copy_from_orig_to_rotamers_for_include_current_sampler(
-                pose_stack,
-                task,
-                gbt_for_conformer,
-                block_type_ind_for_conformer,
-                conf_inds_for_sampler,
-                sampler_n_rots_for_gbt,
-                sampler_gbt_for_rotamer,
-                n_dof_atoms_offset_for_conformer,
-            )
-        )
-
-        conf_dofs_kto[dst + 1, :] = orig_dofs_kto[src + 1, :]
+    # Selection differs, but both samplers copy the same input conformation.
+    fill_dofs_for_samples = IncludeCurrentSampler.fill_dofs_for_samples
