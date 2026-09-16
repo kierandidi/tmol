@@ -323,8 +323,12 @@ def fast_relax(  # noqa: C901
     fa_rep_start = float(sfxn.get_weight(ScoreType.fa_ljrep))
 
     wpsm = sfxn.render_whole_pose_scoring_module(pose_stack)
-    best_score = wpsm(pose_stack.coords)
+    with torch.no_grad():
+        best_score = wpsm(pose_stack.coords)
     del wpsm
+    gc.collect()
+    if pose_stack.device.type == "cuda":
+        torch.cuda.empty_cache()
     best_ps = pose_stack.clone()
 
     if min_fn is None:
