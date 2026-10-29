@@ -1,0 +1,2 @@
+{"engine": "tmol", "device": "cpu", "batch": 1, "dataset": "5uoi", "threads": 32, "mode": "torsion"} SLURM_JOB_ID 744781 node slurm-h200-244-049
+[2026-10-26T15:17:23.896] error: *** JOB 744781 ON slurm-h200-244-049 CANCELLED AT 2026-10-26T15:17:23 DUE to SIGNAL Terminated ***

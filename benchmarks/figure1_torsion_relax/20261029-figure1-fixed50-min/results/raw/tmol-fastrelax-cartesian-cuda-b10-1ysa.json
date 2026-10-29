@@ -1,0 +1,76 @@
+{
+  "engine": "tmol",
+  "protocol": "fastrelax",
+  "relax_mode": "cartesian",
+  "dataset_id": "1ysa",
+  "modality": "protein_nucleic",
+  "device": "cuda",
+  "min_steps": 50,
+  "batch_size": 10,
+  "atoms": 3235,
+  "residues": 154,
+  "input_path": "/mnt/home/kdidi/tmol-paper-benchmark/data/rcsb/clean/1ysa.pdb",
+  "input_sha256": "884ad6287ff67b5121fe6c2964cc733507af363babe99e1300c072d939fbaa39",
+  "cpu_threads_requested": 1,
+  "seed": 20260906,
+  "num_repeats": 1,
+  "timed_samples": 1,
+  "engine_version": "0.2.0",
+  "engine_commit": "uw-ipd/tmol v0.2.0 (release wheel; master 60b0d77df is v0.2.0+10 docs commits)",
+  "machine": {
+    "hostname": "slurm-h200-238-001",
+    "platform": "Linux-6.8.12-680-6063-coreweave-amd64-f81899c8-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "cpu_model": "INTEL(R) XEON(R) PLATINUM 8562Y+",
+    "gpu": "NVIDIA H200, GPU-122dd87f-8556-27f6-3539-f9ec59d1165c, 595.71.05",
+    "slurm_job_id": "770290",
+    "slurm_cpus_per_task": "4",
+    "cuda_visible_devices": "0"
+  },
+  "cpu_affinity": [
+    48,
+    49,
+    112,
+    113
+  ],
+  "source_harness": "/home/kdidi/tmol-paper-benchmark/runs/20261029-figure1-fixed50-min/src",
+  "status": "ok",
+  "started_utc": "2026-10-29T12:28:15Z",
+  "seconds_per_batch_samples": [
+    7.873148392885923
+  ],
+  "seconds_per_structure_samples": [
+    0.7873148392885924
+  ],
+  "iterations_per_sample": 1,
+  "setup_seconds": 9.316334340721369,
+  "score_terms": {},
+  "peak_memory_bytes": 452003328,
+  "tmol_import_version": "0.2.0",
+  "torch_version": "2.13.0+cu132",
+  "torch_cuda_version": "13.2",
+  "torch_num_threads": 1,
+  "gpu_properties": {
+    "name": "NVIDIA H200",
+    "total_memory": 150111977472,
+    "compute_capability": "9.0"
+  },
+  "validation_score_mean": -920.70068359375,
+  "validation_score_min": -925.9992065429688,
+  "validation_score_max": -917.2167358398438,
+  "initial_score_mean": 1291.1287841796875,
+  "final_scores_first10": [
+    -925.4945678710938,
+    -925.9992065429688,
+    -917.557373046875,
+    -917.4850463867188,
+    -920.1397705078125,
+    -920.448486328125,
+    -917.8760986328125,
+    -917.2167358398438,
+    -922.030517578125,
+    -922.7589721679688
+  ],
+  "elapsed_seconds": 24.735235327854753,
+  "finished_utc": "2026-10-29T12:28:39Z"
+}

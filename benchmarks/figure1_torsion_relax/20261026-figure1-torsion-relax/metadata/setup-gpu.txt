@@ -1,0 +1,3 @@
+name, driver_version
+NVIDIA H200, 595.71.05
+slurm-h200-244-049

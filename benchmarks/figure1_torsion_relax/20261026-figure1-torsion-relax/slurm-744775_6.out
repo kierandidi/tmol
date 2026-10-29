@@ -1,0 +1,13 @@
+{"engine": "tmol", "device": "cuda", "batch": 10, "dataset": "hsp90", "threads": 1, "mode": "torsion"} SLURM_JOB_ID 744784 node slurm-h200-238-039
+Environment variable CCD_MIRROR_PATH not set. Will not be able to use function requiring this variable. To set it you may:
+  (1) add the line 'export VAR_NAME=path/to/variable' to your .bashrc or .zshrc file
+  (2) set it in your current shell with 'export VAR_NAME=path/to/variable'
+  (3) write it to a .env file in the root of the atomworks.io repository
+Environment variable PDB_MIRROR_PATH not set. Will not be able to use function requiring this variable. To set it you may:
+  (1) add the line 'export VAR_NAME=path/to/variable' to your .bashrc or .zshrc file
+  (2) set it in your current shell with 'export VAR_NAME=path/to/variable'
+  (3) write it to a .env file in the root of the atomworks.io repository
+Inaccurate G! Segment= 0  Step= 9.094947017729282e-13  Deriv= -5104.7197265625  Finite= 939524096.0
+Inaccurate G! Segment= 1  Step= 9.094947017729282e-13  Deriv= -25326.873046875  Finite= 536870912.0
+Inaccurate G! Segment= 9  Step= 4.547473508864641e-13  Deriv= -1567.7626953125  Finite= 1744830464.0
+{"engine": "tmol", "relax_mode": "torsion", "dataset_id": "hsp90", "device": "cuda", "batch_size": 10, "status": "ok", "error": null, "elapsed_seconds": 28.664218982681632, "initial_score_mean": 386.0771179199219, "validation_score_mean": -450.9059753417969}

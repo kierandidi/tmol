@@ -1,0 +1,12 @@
+{"engine": "tmol", "device": "cuda", "batch": 1, "dataset": "1ysa", "threads": 1, "mode": "torsion"} SLURM_JOB_ID 744780 node slurm-h200-238-039
+Environment variable CCD_MIRROR_PATH not set. Will not be able to use function requiring this variable. To set it you may:
+  (1) add the line 'export VAR_NAME=path/to/variable' to your .bashrc or .zshrc file
+  (2) set it in your current shell with 'export VAR_NAME=path/to/variable'
+  (3) write it to a .env file in the root of the atomworks.io repository
+Environment variable PDB_MIRROR_PATH not set. Will not be able to use function requiring this variable. To set it you may:
+  (1) add the line 'export VAR_NAME=path/to/variable' to your .bashrc or .zshrc file
+  (2) set it in your current shell with 'export VAR_NAME=path/to/variable'
+  (3) write it to a .env file in the root of the atomworks.io repository
+LYS is seen only at a chain terminus and N, NZ could each carry its other connection; it is read as the conventional backbone through N. A copy of the residue in a chain would settle it.
+GLU is seen only at a chain terminus and C, CD could each carry its other connection; it is read as the conventional backbone through C. A copy of the residue in a chain would settle it.
+{"engine": "tmol", "relax_mode": "torsion", "dataset_id": "1ysa", "device": "cuda", "batch_size": 1, "status": "ok", "error": null, "elapsed_seconds": 81.42700526397675, "initial_score_mean": 1291.1285400390625, "validation_score_mean": -398.60296630859375}

@@ -1,0 +1,406 @@
+diff -ruN -x tests -x __pycache__ pristine/tmol/kinematics/_check_fold_forest.py overlay/tmol/kinematics/_check_fold_forest.py
+--- pristine/tmol/kinematics/_check_fold_forest.py	2026-10-26 14:12:53.014341393 +0000
++++ overlay/tmol/kinematics/_check_fold_forest.py	2026-10-26 14:13:06.911758905 +0000
+@@ -5,7 +5,7 @@
+ from tmol.kinematics import EdgeType
+ 
+ 
+-@numba.jit(nopython=True)
++@numba.jit(nopython=True, cache=True)
+ def mark_polymeric_bonds_in_foldforest_edges(
+     n_poses: int,
+     max_n_blocks: int,
+@@ -44,7 +44,7 @@
+     return (polymeric_connection_in_edge, count_bad_for_pose, bad_edges)
+ 
+ 
+-@numba.jit(nopython=True)
++@numba.jit(nopython=True, cache=True)
+ def bfs_proper_forest(  # noqa: C901
+     roots: NDArray[numpy.int64][:, :],
+     n_blocks: NDArray[numpy.int64][:],
+@@ -96,7 +96,7 @@
+     return cycles_detected, missing
+ 
+ 
+-@numba.jit(nopython=True)
++@numba.jit(nopython=True, cache=True)
+ def ensure_jumps_numbered_and_distinct(
+     edges: NDArray[numpy.int64][:, :, 4],
+ ):
+@@ -137,7 +137,7 @@
+     return found_bad_jump, count_n_bad_jumps, bad_jump_numbers, count_n_jumps
+ 
+ 
+-@numba.jit(nopython=True)
++@numba.jit(nopython=True, cache=True)
+ def validate_fold_forest_jit(  # noqa: C901
+     n_blocks: NDArray[numpy.int64][:],
+     edges: NDArray[numpy.int64][:, :, 4],
+diff -ruN -x tests -x __pycache__ pristine/tmol/kinematics/_fold_forest.py overlay/tmol/kinematics/_fold_forest.py
+--- pristine/tmol/kinematics/_fold_forest.py	2026-10-26 14:12:53.137558144 +0000
++++ overlay/tmol/kinematics/_fold_forest.py	2026-10-26 15:20:52.847086289 +0000
+@@ -336,7 +336,11 @@
+                 edges[p, :n] = edges_p
+             n_edges[p] = n
+ 
+-        return cls(max_n_edges=max_n_edges, n_edges=n_edges, edges=edges)
++        forest = cls(max_n_edges=max_n_edges, n_edges=n_edges, edges=edges)
++        # Built to be a valid forest: PoseStackKinematicsModule need not
++        # re-validate it (the check costs a numba compile or cache load).
++        object.__setattr__(forest, "_validated_by_construction", True)
++        return forest
+ 
+     @classmethod
+     def from_edges(cls, edges: NDArray[int][:, :, 4]) -> "FoldForest":
+diff -ruN -x tests -x __pycache__ pristine/tmol/kinematics/_script_modules.py overlay/tmol/kinematics/_script_modules.py
+--- pristine/tmol/kinematics/_script_modules.py	2026-10-26 14:12:53.025582238 +0000
++++ overlay/tmol/kinematics/_script_modules.py	2026-10-26 15:20:52.851029521 +0000
+@@ -49,7 +49,8 @@
+         _annotate_packed_block_type_with_gen_scan_path_segs(pbt)
+ 
+         n_blocks = torch.sum(ps.block_type_ind != -1, dim=1).cpu().numpy()
+-        validate_fold_forest(n_blocks, ff.edges)
++        if not getattr(ff, "_validated_by_construction", False):
++            validate_fold_forest(n_blocks, ff.edges)
+ 
+         ff_edges_cpu = torch.from_numpy(ff.edges).to(torch.int32)
+         kmd = construct_kin_module_data_for_pose(ps, ff_edges_cpu)
+diff -ruN -x tests -x __pycache__ pristine/tmol/optimization/_lbfgs_armijo.py overlay/tmol/optimization/_lbfgs_armijo.py
+--- pristine/tmol/optimization/_lbfgs_armijo.py	2026-10-26 14:12:52.547582856 +0000
++++ overlay/tmol/optimization/_lbfgs_armijo.py	2026-10-26 14:42:07.625405216 +0000
+@@ -1,3 +1,4 @@
++import os
+ from contextlib import nullcontext
+ from math import isfinite
+ from numbers import Integral, Real
+@@ -121,6 +122,14 @@
+     return result.squeeze(0) if unbatched else result
+ 
+ 
++# Evaluate a line search's first trial with its gradient when the chance that
++# every segment accepts it exceeds this: a gradient-free trial costs the backward
++# pass less, but then needs a gradient evaluation at the accepted step.
++_FIRST_TRIAL_GRAD_P = 0.43
++
++# Experimental cap on line-search evaluations per iteration (None: unlimited).
++_LS_MAX_TRIALS = int(os.environ["TMOL_LS_MAX_TRIALS"]) if "TMOL_LS_MAX_TRIALS" in os.environ else None
++
+ # per-segment line search states
+ _LS_DONE = 0
+ _LS_INCREASE = 1  # the step looked linear; trying a longer one
+@@ -143,6 +152,7 @@
+     sigma_decrease=0.1,
+     sigma_increase=0.8,
+     minstep=1e-6,
++    max_trials=None,
+ ):
+     """Minimize over alpha, the function ``f(xk+alpha pk)``.
+ 
+@@ -160,6 +170,10 @@
+                          [must be in (0,1) and <=sigma_increase]
+         factor : (float) scalefactor in modifying stepsize [must be in (0,1)]
+         minstep : (float) minimum stepsize to take
++        max_trials : (int) if set, a segment still backtracking after this many
++                     evaluations of f is declared failed, as if it had reached
++                     minstep. Every evaluation scores the whole batch, so one
++                     stalled segment otherwise holds all the others back.
+ 
+     Returns:
+         stepsize - accepted stepsize, per segment
+@@ -251,6 +265,18 @@
+         phi = phi_trial
+         if not combine_cuda_checks:
+             any_active = _any_true(active)
++        if any_active and max_trials is not None and n_evals >= max_trials:
++            # Give up on segments that are still backtracking; a segment that
++            # is only extending an already accepted step keeps that step.
++            give_up = status == _LS_BACKTRACK
++            accepted = torch.where(give_up, torch.zeros_like(accepted), accepted)
++            phi_accepted = torch.where(give_up, phi0, phi_accepted)
++            status = torch.where(
++                give_up,
++                torch.full_like(status, _LS_FAILED),
++                torch.where(status == _LS_INCREASE, torch.zeros_like(status), status),
++            )
++            break
+ 
+     return accepted, phi_accepted, n_evals, status, bool(torch.equal(alpha, accepted))
+ 
+@@ -392,6 +418,8 @@
+         self.verbose = verbose
+ 
+         self._last_loss_vec = None
++        self._last_eval_had_grad = True
++        self._p_first_accept = 0.5
+         self._sum_scratch = None
+         if segment_ids is None:
+             # the whole parameter as one segment: the same code path as a stack
+@@ -559,6 +587,23 @@
+             return segment_values.repeat_interleave(self._segment_size)
+         return segment_values[self._segment_ids]
+ 
++    def _wrap_forward_only(self, forward_only):
++        """Like _wrap_closure, for an energy-only evaluation (no gradient)."""
++
++        def wrapped():
++            loss = forward_only()
++            if (
++                self._segment_ids is not None
++                and torch.is_tensor(loss)
++                and loss.numel() == self._n_segments
++            ):
++                self._last_loss_vec = loss.detach().reshape(self._n_segments)
++                return loss.sum()
++            self._last_loss_vec = None
++            return loss
++
++        return wrapped
++
+     def _wrap_closure(self, closure):
+         """Reduce a per-segment closure to a scalar, keeping the vector around.
+ 
+@@ -880,10 +925,11 @@
+             sigma_decrease=0.1,
+             sigma_increase=0.8,
+             minstep=self._minstep,
++            max_trials=_LS_MAX_TRIALS,
+         )
+         ctx.ls_evals = ls_evals
+ 
+-        if not trial_is_accepted:
++        if not trial_is_accepted or not self._last_eval_had_grad:
+             torch.addcmul(
+                 ctx.x_backup,
+                 ctx.d,
+@@ -981,7 +1027,12 @@
+         Returns:
+             The initial loss, matching the ``Optimizer.step`` convention.
+         """
++        forward_only = getattr(closure, "forward_only", None)
+         closure = self._wrap_closure(closure)
++        forward_only = (
++            None if forward_only is None else self._wrap_forward_only(forward_only)
++        )
++        self._last_eval_had_grad = True
+         ctx = self._step_setup(closure)
+ 
+         x = ctx.x
+@@ -998,7 +1049,14 @@
+                 self._per_element(alpha_vec),
+                 out=x,
+             )
+-            closure()
++            with_grad = forward_only is None or (
++                self.ls_func_evals == 1 and self._p_first_accept > _FIRST_TRIAL_GRAD_P
++            )
++            if with_grad:
++                closure()
++            else:
++                forward_only()
++            self._last_eval_had_grad = with_grad
+             return self._last_loss_vec
+ 
+         current_evals = 1
+@@ -1038,6 +1096,9 @@
+             x_backup.copy_(x)
+ 
+             self._segment_line_search(ctx, linefn)
++            self._p_first_accept = 0.7 * self._p_first_accept + 0.3 * float(
++                self.ls_func_evals == 1
++            )
+ 
+             ctx.flat_grad = ctx.param.grad.data.view(-1)  # Direct reference
+ 
+diff -ruN -x tests -x __pycache__ pristine/tmol/optimization/_minimizers.py overlay/tmol/optimization/_minimizers.py
+--- pristine/tmol/optimization/_minimizers.py	2026-10-26 14:12:52.553432596 +0000
++++ overlay/tmol/optimization/_minimizers.py	2026-10-26 14:16:01.401331910 +0000
+@@ -142,6 +142,15 @@
+         total.backward()
+         return E if segmented else total
+ 
++    def forward_only() -> torch.Tensor:
++        # Line-search trials need only the energy; gradients are evaluated at
++        # the accepted step.
++        with torch.no_grad():
++            E = sfxn_module()
++        return E if segmented else E.sum()
++
++    closure.forward_only = forward_only
++
+     if timing_device is not None:
+         synchronize_device(timing_device)
+     end_time1 = time.perf_counter()
+diff -ruN -x tests -x __pycache__ pristine/tmol/optimization/_sfxn_modules.py overlay/tmol/optimization/_sfxn_modules.py
+--- pristine/tmol/optimization/_sfxn_modules.py	2026-10-26 14:12:52.566823498 +0000
++++ overlay/tmol/optimization/_sfxn_modules.py	2026-10-26 14:29:29.517628469 +0000
+@@ -1,3 +1,4 @@
++import os
+ import warnings
+ from copy import deepcopy
+ 
+@@ -201,6 +202,7 @@
+         base_coords: torch.Tensor,
+         dof_flat_idx: torch.Tensor,
+         atom_idx: torch.Tensor,
++        dof_scale: torch.Tensor | None = None,
+     ):
+         super().__init__()
+         self.kin_module = kin_module
+@@ -209,8 +211,13 @@
+         self.base_coords = base_coords
+         self.dof_flat_idx = dof_flat_idx
+         self.atom_idx = atom_idx
++        # The optimizer's variables are the movable DOFs times dof_scale; see
++        # KinForestSfxnNetwork. Read by address, so update it in place.
++        self.dof_scale = dof_scale
+ 
+     def dofs(self, masked_dofs: torch.Tensor) -> torch.Tensor:
++        if self.dof_scale is not None:
++            masked_dofs = masked_dofs / self.dof_scale
+         return (
+             self.base_dofs.view(-1)
+             .index_put((self.dof_flat_idx,), masked_dofs)
+@@ -251,6 +258,7 @@
+         cuda_graph: bool | str = False,
+         fold_forest: FoldForest | None = None,
+         move_map: MoveMap | None = None,
++        scale_dofs: bool = True,
+     ):
+         super(KinForestSfxnNetwork, self).__init__()
+ 
+@@ -300,6 +308,17 @@
+             self.dof_mask.reshape(-1).nonzero(as_tuple=False).squeeze(-1)
+         )
+ 
++        # Torsions and jumps differ enormously in how far they move atoms, so
++        # plain radians and Angstroms give a badly conditioned problem for
++        # L-BFGS (identity initial inverse Hessian, one common step length).
++        # With scale_dofs the optimizer works on p = dof * s, where s_i is the
++        # RMS-summed Cartesian displacement per unit of DOF i, i.e. the square
++        # root of diag(J^T J) for the DOF-to-coordinates Jacobian J.
++        scale_dofs = scale_dofs and os.environ.get("TMOL_KIN_SCALE", "1") == "1"
++        self.scale_dofs = scale_dofs
++        self.register_buffer(
++            "dof_scale", torch.ones(int(self.dof_mask.sum()), device=torch_device)
++        )
+         self.masked_dofs = torch.nn.Parameter(raw_dofs[self.dof_mask])
+ 
+         # pose each element of masked_dofs belongs to, for per-pose minimization.
+@@ -318,7 +337,10 @@
+             base_coords,
+             self._dof_flat_idx,
+             self._atom_idx,
++            self.dof_scale if scale_dofs else None,
+         )
++        if scale_dofs:
++            self._rescale_dofs()
+         # A plain dict keeps the captured modules, and the score weights they
+         # hold, out of parameters(): optimizers see only masked_dofs.
+         self._cuda_graphs: dict[str, object] = {}
+@@ -341,6 +363,43 @@
+             kmd.forest.doftype,
+         )
+ 
++    @torch.no_grad()
++    def _rescale_dofs(self, n_probes: int = 8) -> None:
++        """Set dof_scale to sqrt(diag(J^T J)) and re-express masked_dofs in it.
++
++        The diagonal is estimated with Rademacher probes z over the atoms
++        (E[(J^T z)_i^2] = (J^T J)_ii). Identical atoms in different poses share
++        probes, so identical poses get identical scales at any batch size.
++        """
++        scoring = self._kinematic_scoring
++        q = (self.masked_dofs.detach() / self.dof_scale)
++        self.dof_scale.fill_(1.0)  # the probe works in unscaled DOFs
++        n_atoms = self.orig_coords_shape[1]
++        atom_in_pose = self._atom_idx % n_atoms
++        gen = torch.Generator(device=q.device)
++        gen.manual_seed(0)
++        acc = torch.zeros_like(q)
++        with torch.enable_grad():
++            u = q.clone().requires_grad_(True)
++            kin_coords = scoring.kin_module(scoring.dofs(u))
++            for _ in range(n_probes):
++                z = (
++                    torch.randint(
++                        0, 2, (n_atoms, 3), device=q.device, generator=gen
++                    ).to(kin_coords.dtype)
++                    * 2
++                    - 1
++                )
++                (g,) = torch.autograd.grad(
++                    (kin_coords[1:] * z[atom_in_pose]).sum(),
++                    u,
++                    retain_graph=True,
++                )
++                acc += g * g
++        scale = (acc / n_probes).sqrt().clamp_min(1e-2)
++        self.dof_scale.copy_(scale)
++        self.masked_dofs.copy_(q * scale)
++
+     def enable_cuda_graphs(
+         self, mode: str = "forward_backward"
+     ) -> "KinForestSfxnNetwork":
+@@ -366,6 +425,7 @@
+             self._kinematic_scoring.base_coords,
+             self._dof_flat_idx,
+             self._atom_idx,
++            self._kinematic_scoring.dof_scale,
+         )
+         if mode in ("forward", "both") and "forward" not in self._cuda_graphs:
+             self._cuda_graphs["forward"] = _InferenceCUDAGraph(
+@@ -470,6 +530,9 @@
+             scoring.base_coords.copy_(pose_stack.coords)
+             scoring.base_dofs.copy_(self._dofs_from_coords(pose_stack.coords))
+             self.masked_dofs.copy_(scoring.base_dofs.view(-1)[self._dof_flat_idx])
++            if self.scale_dofs:
++                self.dof_scale.fill_(1.0)
++                self._rescale_dofs()
+         self.masked_dofs.grad = None
+         return True
+ 
+diff -ruN -x tests -x __pycache__ pristine/tmol/pack/compiled/compiled.cuda.cu overlay/tmol/pack/compiled/compiled.cuda.cu
+--- pristine/tmol/pack/compiled/compiled.cuda.cu	2026-10-26 14:12:49.468701993 +0000
++++ overlay/tmol/pack/compiled/compiled.cuda.cu	2026-10-26 14:51:54.067585572 +0000
+@@ -14,6 +14,7 @@
+ #include <cooperative_groups.h>
+ 
+ #include <type_traits>
++#include <cstdlib>
+ 
+ #include <curand.h>
+ #include <curand_kernel.h>
+@@ -514,6 +515,14 @@
+   return 0.0f;
+ }
+ 
++// Experimental run-time overrides of the annealer's trajectory counts.
++static inline int env_int_or(char const* name, int fallback) {
++  char const* value = std::getenv(name);
++  if (value == nullptr || *value == '\0') return fallback;
++  int const parsed = std::atoi(value);
++  return parsed > 0 ? parsed : fallback;
++}
++
+ template <tmol::Device D, class IG, int ChunkSize>
+ struct Annealer {
+   static auto run_simulated_annealing(ContextManager& mgr, IG ig)
+@@ -523,7 +532,7 @@
+     int const max_n_rotamers = ig.max_n_rotamers_per_pose_cpu();
+ 
+     // SA hyperparameters
+-    int const n_hitemp_simA_traj = 500;
++    int const n_hitemp_simA_traj = env_int_or("TMOL_PACK_SA_HITEMP_TRAJ", 500);
+     double const inner_iter_mult_hitemp = 1.5;
+     double const inner_iter_mult_lotemp = 0.5;
+     // Temperature schedule
+@@ -536,7 +545,7 @@
+ 
+     int const n_hitemp_simA_threads = 32 * n_poses * n_hitemp_simA_traj;
+     // Each top hitemp trajectory seeds n_lotemp_expansions lotemp trajectories
+-    int const n_lotemp_expansions = 10;
++    int const n_lotemp_expansions = env_int_or("TMOL_PACK_SA_EXPANSIONS", 10);
+     float const round1_cut = 0.25f;
+     float const round2_cut = 0.25f;
+     int const n_lotemp_simA_traj =

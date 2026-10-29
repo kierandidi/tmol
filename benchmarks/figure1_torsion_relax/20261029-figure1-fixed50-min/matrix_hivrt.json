@@ -1,0 +1,90 @@
+{
+ "gpu": [
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "hivrt",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "hivrt",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "hivrt",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "hivrt",
+   "threads": 1,
+   "mode": "torsion"
+  }
+ ],
+ "cpu": [
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "hivrt",
+   "threads": 32,
+   "mode": "torsion"
+  }
+ ],
+ "gpu_cart": [
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "hivrt",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "hivrt",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "hivrt",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "hivrt",
+   "threads": 1,
+   "mode": "cartesian"
+  }
+ ],
+ "cpu_cart": [
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "hivrt",
+   "threads": 32,
+   "mode": "cartesian"
+  }
+ ]
+}

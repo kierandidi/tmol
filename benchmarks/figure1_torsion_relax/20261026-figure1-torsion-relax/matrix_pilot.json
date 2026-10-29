@@ -1,0 +1,308 @@
+{
+ "gpu": [
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "5uoi",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "hsp90",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "5uoi",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "hsp90",
+   "threads": 1,
+   "mode": "torsion"
+  }
+ ],
+ "cpu": [
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "5uoi",
+   "threads": 32,
+   "mode": "torsion"
+  }
+ ],
+ "pyro": [
+  {
+   "engine": "pyrosetta",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "5uoi",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "pyrosetta",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "hsp90",
+   "threads": 1,
+   "mode": "torsion"
+  }
+ ],
+ "gpu_cart": [
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "5uoi",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "5yzf",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "5m4a",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "hsp90",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "5uoi",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "5yzf",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "5m4a",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "hsp90",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "5uoi",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "5yzf",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "5m4a",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "hsp90",
+   "threads": 1,
+   "mode": "cartesian"
+  }
+ ],
+ "graph": [
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "5uoi",
+   "threads": 1,
+   "mode": "torsion",
+   "cuda_graph": "off"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "5uoi",
+   "threads": 1,
+   "mode": "torsion",
+   "cuda_graph": "on"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "5yzf",
+   "threads": 1,
+   "mode": "torsion",
+   "cuda_graph": "off"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "5yzf",
+   "threads": 1,
+   "mode": "torsion",
+   "cuda_graph": "on"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "5m4a",
+   "threads": 1,
+   "mode": "torsion",
+   "cuda_graph": "off"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "5m4a",
+   "threads": 1,
+   "mode": "torsion",
+   "cuda_graph": "on"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "hsp90",
+   "threads": 1,
+   "mode": "torsion",
+   "cuda_graph": "off"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "hsp90",
+   "threads": 1,
+   "mode": "torsion",
+   "cuda_graph": "on"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "5uoi",
+   "threads": 1,
+   "mode": "torsion",
+   "cuda_graph": "off"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "5uoi",
+   "threads": 1,
+   "mode": "torsion",
+   "cuda_graph": "on"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "hsp90",
+   "threads": 1,
+   "mode": "torsion",
+   "cuda_graph": "off"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "hsp90",
+   "threads": 1,
+   "mode": "torsion",
+   "cuda_graph": "on"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "5yzf",
+   "threads": 1,
+   "mode": "torsion",
+   "cuda_graph": "off"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "5yzf",
+   "threads": 1,
+   "mode": "torsion",
+   "cuda_graph": "on"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "5m4a",
+   "threads": 1,
+   "mode": "torsion",
+   "cuda_graph": "off"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "5m4a",
+   "threads": 1,
+   "mode": "torsion",
+   "cuda_graph": "on"
+  }
+ ]
+}

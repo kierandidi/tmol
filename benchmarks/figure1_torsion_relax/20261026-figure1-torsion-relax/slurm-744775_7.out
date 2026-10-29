@@ -1,0 +1,22 @@
+{"engine": "tmol", "device": "cuda", "batch": 10, "dataset": "1ysa", "threads": 1, "mode": "torsion"} SLURM_JOB_ID 744785 node slurm-h200-238-039
+Environment variable CCD_MIRROR_PATH not set. Will not be able to use function requiring this variable. To set it you may:
+  (1) add the line 'export VAR_NAME=path/to/variable' to your .bashrc or .zshrc file
+  (2) set it in your current shell with 'export VAR_NAME=path/to/variable'
+  (3) write it to a .env file in the root of the atomworks.io repository
+Environment variable PDB_MIRROR_PATH not set. Will not be able to use function requiring this variable. To set it you may:
+  (1) add the line 'export VAR_NAME=path/to/variable' to your .bashrc or .zshrc file
+  (2) set it in your current shell with 'export VAR_NAME=path/to/variable'
+  (3) write it to a .env file in the root of the atomworks.io repository
+LYS is seen only at a chain terminus and N, NZ could each carry its other connection; it is read as the conventional backbone through N. A copy of the residue in a chain would settle it.
+GLU is seen only at a chain terminus and C, CD could each carry its other connection; it is read as the conventional backbone through C. A copy of the residue in a chain would settle it.
+Inaccurate G! Segment= 1  Step= 9.094947017729282e-13  Deriv= -12044.62109375  Finite= 402653184.0
+Inaccurate G! Segment= 8  Step= 9.094947017729282e-13  Deriv= -7105.0625  Finite= 603979776.0
+Inaccurate G! Segment= 0  Step= 4.547473508864641e-13  Deriv= -941.037109375  Finite= 3892314112.0
+Inaccurate G! Segment= 8  Step= 9.094947017729282e-13  Deriv= -11455.53125  Finite= 805306368.0
+Inaccurate G! Segment= 0  Step= 9.094947017729282e-13  Deriv= -94229.859375  Finite= 704643072.0
+Inaccurate G! Segment= 1  Step= 9.094947017729282e-13  Deriv= -176350.6875  Finite= 738197504.0
+Inaccurate G! Segment= 6  Step= 9.094947017729282e-13  Deriv= -87493.5078125  Finite= 637534208.0
+Inaccurate G! Segment= 9  Step= 4.547473508864641e-13  Deriv= -13639.3984375  Finite= 671088640.0
+Inaccurate G! Segment= 4  Step= 4.547473508864641e-13  Deriv= -1414.9853515625  Finite= 4160749568.0
+Inaccurate G! Segment= 7  Step= 4.547473508864641e-13  Deriv= -90175.625  Finite= 738197504.0
+{"engine": "tmol", "relax_mode": "torsion", "dataset_id": "1ysa", "device": "cuda", "batch_size": 10, "status": "ok", "error": null, "elapsed_seconds": 32.03819318022579, "initial_score_mean": 1291.1282958984375, "validation_score_mean": -378.1504821777344}

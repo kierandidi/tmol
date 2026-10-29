@@ -1,0 +1,79 @@
+{
+  "engine": "tmol",
+  "protocol": "fastrelax",
+  "relax_mode": "cartesian",
+  "dataset_id": "src",
+  "modality": "protein_ligand",
+  "device": "cuda",
+  "batch_size": 100,
+  "atoms": 7274,
+  "residues": 453,
+  "input_path": "/mnt/home/kdidi/tmol-paper-benchmark/runs/20261026-figure1-torsion-relax/data/src_complex.pdb",
+  "input_sha256": "9fc92ccbbc9fea9b144aed04d6688baf00245e60e2f71acac06a7f2f25bc8007",
+  "cpu_threads_requested": 1,
+  "seed": 20260906,
+  "num_repeats": 1,
+  "timed_samples": 1,
+  "engine_version": "0.2.0",
+  "engine_commit": "uw-ipd/tmol v0.2.0 (release wheel; master 60b0d77df is v0.2.0+10 docs commits)",
+  "machine": {
+    "hostname": "slurm-h200-244-073",
+    "platform": "Linux-6.8.12-680-6063-coreweave-amd64-f81899c8-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "cpu_model": "INTEL(R) XEON(R) PLATINUM 8562Y+",
+    "gpu": "NVIDIA H200, GPU-2d58b83f-5392-11a0-ba58-67d80d89f8d1, 595.71.05",
+    "slurm_job_id": "744855",
+    "slurm_cpus_per_task": "8",
+    "cuda_visible_devices": "0"
+  },
+  "cpu_affinity": [
+    28,
+    29,
+    30,
+    31,
+    92,
+    93,
+    94,
+    95
+  ],
+  "source_harness": "/home/kdidi/tmol-paper-benchmark/runs/20261026-figure1-torsion-relax/src",
+  "status": "ok",
+  "started_utc": "2026-10-26T15:27:57Z",
+  "seconds_per_batch_samples": [
+    157.46019905991852
+  ],
+  "seconds_per_structure_samples": [
+    1.5746019905991853
+  ],
+  "iterations_per_sample": 1,
+  "setup_seconds": 6.248107712715864,
+  "score_terms": {},
+  "peak_memory_bytes": 7318722048,
+  "tmol_import_version": "0.2.0",
+  "torch_version": "2.13.0+cu132",
+  "torch_cuda_version": "13.2",
+  "torch_num_threads": 1,
+  "gpu_properties": {
+    "name": "NVIDIA H200",
+    "total_memory": 150111977472,
+    "compute_capability": "9.0"
+  },
+  "validation_score_mean": -1591.7999267578125,
+  "validation_score_min": -1601.044921875,
+  "validation_score_max": -1584.43896484375,
+  "initial_score_mean": -36.090084075927734,
+  "final_scores_first10": [
+    -1586.8392333984375,
+    -1591.3138427734375,
+    -1592.9053955078125,
+    -1597.415771484375,
+    -1592.693603515625,
+    -1592.602783203125,
+    -1593.811767578125,
+    -1590.4647216796875,
+    -1588.75732421875,
+    -1595.93603515625
+  ],
+  "elapsed_seconds": 173.50225933082402,
+  "finished_utc": "2026-10-26T15:30:51Z"
+}

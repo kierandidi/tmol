@@ -1,0 +1,75 @@
+{
+  "engine": "tmol",
+  "protocol": "fastrelax",
+  "relax_mode": "cartesian",
+  "dataset_id": "1ysa",
+  "modality": "protein_nucleic",
+  "device": "cuda",
+  "batch_size": 10,
+  "atoms": 3235,
+  "residues": 154,
+  "input_path": "/mnt/home/kdidi/tmol-paper-benchmark/data/rcsb/clean/1ysa.pdb",
+  "input_sha256": "884ad6287ff67b5121fe6c2964cc733507af363babe99e1300c072d939fbaa39",
+  "cpu_threads_requested": 1,
+  "seed": 20260906,
+  "num_repeats": 1,
+  "timed_samples": 1,
+  "engine_version": "0.2.0",
+  "engine_commit": "uw-ipd/tmol v0.2.0 (release wheel; master 60b0d77df is v0.2.0+10 docs commits)",
+  "machine": {
+    "hostname": "slurm-h200-244-053",
+    "platform": "Linux-6.8.12-680-6063-coreweave-amd64-f81899c8-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "cpu_model": "INTEL(R) XEON(R) PLATINUM 8562Y+",
+    "gpu": "NVIDIA H200, GPU-477a5a4c-1862-5972-0fa4-e67cf5fe4632, 595.71.05",
+    "slurm_job_id": "744537",
+    "slurm_cpus_per_task": "4",
+    "cuda_visible_devices": "0"
+  },
+  "cpu_affinity": [
+    34,
+    35,
+    98,
+    99
+  ],
+  "source_harness": "/home/kdidi/tmol-paper-benchmark/runs/20261026-figure1-torsion-relax/src",
+  "status": "ok",
+  "started_utc": "2026-10-26T10:17:02Z",
+  "seconds_per_batch_samples": [
+    9.315038993954659
+  ],
+  "seconds_per_structure_samples": [
+    0.9315038993954659
+  ],
+  "iterations_per_sample": 1,
+  "setup_seconds": 8.861962324008346,
+  "score_terms": {},
+  "peak_memory_bytes": 461109760,
+  "tmol_import_version": "0.2.0",
+  "torch_version": "2.13.0+cu132",
+  "torch_cuda_version": "13.2",
+  "torch_num_threads": 1,
+  "gpu_properties": {
+    "name": "NVIDIA H200",
+    "total_memory": 150111977472,
+    "compute_capability": "9.0"
+  },
+  "validation_score_mean": -960.7648315429688,
+  "validation_score_min": -966.1173706054688,
+  "validation_score_max": -954.0712890625,
+  "initial_score_mean": 1291.128662109375,
+  "final_scores_first10": [
+    -963.9183959960938,
+    -964.6806030273438,
+    -959.6180419921875,
+    -954.0712890625,
+    -963.2921142578125,
+    -955.3868408203125,
+    -966.1173706054688,
+    -960.6240844726562,
+    -956.0322875976562,
+    -963.9083862304688
+  ],
+  "elapsed_seconds": 25.351205168291926,
+  "finished_utc": "2026-10-26T10:17:28Z"
+}

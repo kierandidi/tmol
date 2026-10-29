@@ -1,0 +1,53 @@
+{
+  "engine": "tmol",
+  "engine_version": "0.2.0",
+  "protocol": "score_gradient",
+  "device": "cuda",
+  "batch_size": 10,
+  "modality": "protein_ligand",
+  "dataset_id": "cox1",
+  "atoms": 8923,
+  "residues": 554,
+  "status": "ok",
+  "error": "",
+  "cpu_threads_requested": 1,
+  "machine": {
+    "hostname": "slurm-h200-244-073",
+    "platform": "Linux-6.8.12-680-6063-coreweave-amd64-f81899c8-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "cpu_model": "INTEL(R) XEON(R) PLATINUM 8562Y+",
+    "gpu": "NVIDIA H200, GPU-1daafd50-dc66-b365-b08f-fba5505f3ee3, 595.71.05",
+    "slurm_job_id": "773310",
+    "slurm_cpus_per_task": "4",
+    "cuda_visible_devices": "0"
+  },
+  "score_function": "beta2016",
+  "started_utc": "2026-10-29T18:32:34Z",
+  "prepared_atoms": 8923,
+  "seconds_per_batch_samples": [
+    0.002943380368259965,
+    0.0029308114156613363,
+    0.0029301533878999223,
+    0.002935709133302069,
+    0.0029337887958974444,
+    0.0029339948475626174,
+    0.002937207976770684
+  ],
+  "seconds_per_structure_samples": [
+    0.00029433803682599646,
+    0.00029308114156613365,
+    0.00029301533878999225,
+    0.00029357091333020687,
+    0.0002933788795897444,
+    0.00029339948475626173,
+    0.0002937207976770684
+  ],
+  "iterations_per_sample": 337,
+  "setup_seconds": 7.5533353965729475,
+  "cuda_graph_mode": "forward_backward",
+  "validation_score_mean": 374.6001892089844,
+  "peak_memory_bytes": 129917440,
+  "torch_version": "2.13.0+cu132",
+  "tmol_import_version": "0.2.0",
+  "finished_utc": "2026-10-29T18:32:56Z"
+}

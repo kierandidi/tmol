@@ -1,0 +1,15 @@
+{
+ "expected": 87,
+ "successful": 87,
+ "failed": [],
+ "pending": [],
+ "complete": true,
+ "relax_mode": "torsion (atom-tree / kinematic)",
+ "tmol_version": "0.2.0",
+ "cpu_threads": {
+  "tmol": 32,
+  "pyrosetta": 1
+ },
+ "gpu": "one H200 per job",
+ "timing": "one seeded native FastRelax repeat per point; no timing uncertainty estimated"
+}

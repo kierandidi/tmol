@@ -1,0 +1,1210 @@
+{
+ "gpu": [
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "2mtq",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "5umr",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "5n5g",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "6azu",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "5opj",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "1s78",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "cdk2",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "ada",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "ache",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "cox1",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "hivrt",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "7kii",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "4lup",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "3bbb",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "1kx5",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "2mtq",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "5umr",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "5n5g",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "6azu",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "5opj",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "1s78",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "cdk2",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "ada",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "ache",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "cox1",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "hivrt",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "7kii",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "4lup",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "3bbb",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "1kx5",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "2mtq",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "5umr",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "5n5g",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "6azu",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "5opj",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "1s78",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "cdk2",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "ada",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "ache",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "cox1",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "hivrt",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "7kii",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "4lup",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "3bbb",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "1kx5",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "2mtq",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "5umr",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "5n5g",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "6azu",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "5opj",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "1s78",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "cdk2",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "ada",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "ache",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "cox1",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "hivrt",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "7kii",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "4lup",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "3bbb",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "1kx5",
+   "threads": 1,
+   "mode": "torsion"
+  }
+ ],
+ "cpu": [
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "2mtq",
+   "threads": 32,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "5umr",
+   "threads": 32,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "5n5g",
+   "threads": 32,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "6azu",
+   "threads": 32,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "5opj",
+   "threads": 32,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "1s78",
+   "threads": 32,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "cdk2",
+   "threads": 32,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "ada",
+   "threads": 32,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "ache",
+   "threads": 32,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "cox1",
+   "threads": 32,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "hivrt",
+   "threads": 32,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "7kii",
+   "threads": 32,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "4lup",
+   "threads": 32,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "3bbb",
+   "threads": 32,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "1kx5",
+   "threads": 32,
+   "mode": "torsion"
+  }
+ ],
+ "gpu_cart": [
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "2mtq",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "5umr",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "5n5g",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "6azu",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "5opj",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "1s78",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "cdk2",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "ada",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "ache",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "cox1",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "hivrt",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "7kii",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "4lup",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "3bbb",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "1kx5",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "2mtq",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "5umr",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "5n5g",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "6azu",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "5opj",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "1s78",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "cdk2",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "ada",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "ache",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "cox1",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "hivrt",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "7kii",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "4lup",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "3bbb",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "1kx5",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "2mtq",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "5umr",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "5n5g",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "6azu",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "5opj",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "1s78",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "cdk2",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "ada",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "ache",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "cox1",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "hivrt",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "7kii",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "4lup",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "3bbb",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "1kx5",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "2mtq",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "5umr",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "5n5g",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "6azu",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "5opj",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "1s78",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "cdk2",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "ada",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "ache",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "cox1",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "hivrt",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "7kii",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "4lup",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "3bbb",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "1kx5",
+   "threads": 1,
+   "mode": "cartesian"
+  }
+ ],
+ "cpu_cart": [
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "2mtq",
+   "threads": 32,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "5umr",
+   "threads": 32,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "5n5g",
+   "threads": 32,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "6azu",
+   "threads": 32,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "5opj",
+   "threads": 32,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "1s78",
+   "threads": 32,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "cdk2",
+   "threads": 32,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "ada",
+   "threads": 32,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "ache",
+   "threads": 32,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "cox1",
+   "threads": 32,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "hivrt",
+   "threads": 32,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "7kii",
+   "threads": 32,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "4lup",
+   "threads": 32,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "3bbb",
+   "threads": 32,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "1kx5",
+   "threads": 32,
+   "mode": "cartesian"
+  }
+ ]
+}

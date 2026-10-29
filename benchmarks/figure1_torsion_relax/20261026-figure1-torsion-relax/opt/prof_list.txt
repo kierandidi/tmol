@@ -1,0 +1,6 @@
+cartesian 5yzf 1
+torsion 5yzf 1
+cartesian 5yzf 10
+torsion 5yzf 10
+cartesian 5yzf 100
+torsion 5yzf 100

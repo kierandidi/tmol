@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-29",
+  "location": "CoreWeave east, hpc-high, H200",
+  "remote_run": "/mnt/home/kdidi/tmol-paper-benchmark/runs/20261029-figure1-fixed50-min",
+  "purpose": "Figure 1 FastRelax series with a fixed 50 L-BFGS iterations per minimization, torsion and Cartesian, tmol and PyRosetta",
+  "tmol": "v0.2.0 release wheels, unmodified (env symlinked from runs/20261026-figure1-torsion-relax/env; sha256 in that run's metadata)",
+  "pyrosetta": "2024.39, MonomerRelax2019 lines with 'min' tolerance replaced by 1e-12 and FastRelax.max_iter(50); cartesian: beta_nov16_cart/beta_genpot_cart + cartesian(True); torsion: beta_nov16/beta_genpot, bb/chi/jump",
+  "tmol_minimization": "custom fast_relax min_fn: LBFGS_Armijo(max_iter=50, fixed_iterations=True) via KinematicMinimizer (torsion) / CartesianMinimizer (graph mode auto); verified 50 iterations per stage",
+  "other_settings": "unchanged from the 200-step runs: same systems/series/seed, 1 repeat, timing contract (no warm-up, GPU sync)",
+  "expected": 174,
+  "successful": 174,
+  "failed": [],
+  "slurm_jobs": "see metadata/submitted-jobs.txt (pilots 770150-770153)",
+  "outputs": {
+    "torsion_csv": "summary/torsion/timing_summary.csv",
+    "cartesian_csv": "summary/cartesian/timing_summary.csv",
+    "comparison": "summary/comparison.{md,csv}",
+    "status": "summary/status.json"
+  }
+}

@@ -1,0 +1,131 @@
+diff -ruN -x tests -x __pycache__ src_tmol/tmol/kinematics/_check_fold_forest.py overlay_master/tmol/kinematics/_check_fold_forest.py
+--- src_tmol/tmol/kinematics/_check_fold_forest.py	2026-10-26 13:35:49.000000000 +0000
++++ overlay_master/tmol/kinematics/_check_fold_forest.py	2026-10-26 15:23:52.093723081 +0000
+@@ -5,7 +5,7 @@
+ from tmol.kinematics import EdgeType
+ 
+ 
+-@numba.jit(nopython=True)
++@numba.jit(nopython=True, cache=True)
+ def mark_polymeric_bonds_in_foldforest_edges(
+     n_poses: int,
+     max_n_blocks: int,
+@@ -44,7 +44,7 @@
+     return (polymeric_connection_in_edge, count_bad_for_pose, bad_edges)
+ 
+ 
+-@numba.jit(nopython=True)
++@numba.jit(nopython=True, cache=True)
+ def bfs_proper_forest(  # noqa: C901
+     roots: NDArray[numpy.int64][:, :],
+     n_blocks: NDArray[numpy.int64][:],
+@@ -96,7 +96,7 @@
+     return cycles_detected, missing
+ 
+ 
+-@numba.jit(nopython=True)
++@numba.jit(nopython=True, cache=True)
+ def ensure_jumps_numbered_and_distinct(
+     edges: NDArray[numpy.int64][:, :, 4],
+ ):
+@@ -137,7 +137,7 @@
+     return found_bad_jump, count_n_bad_jumps, bad_jump_numbers, count_n_jumps
+ 
+ 
+-@numba.jit(nopython=True)
++@numba.jit(nopython=True, cache=True)
+ def validate_fold_forest_jit(  # noqa: C901
+     n_blocks: NDArray[numpy.int64][:],
+     edges: NDArray[numpy.int64][:, :, 4],
+diff -ruN -x tests -x __pycache__ src_tmol/tmol/kinematics/_fold_forest.py overlay_master/tmol/kinematics/_fold_forest.py
+--- src_tmol/tmol/kinematics/_fold_forest.py	2026-10-26 13:35:49.000000000 +0000
++++ overlay_master/tmol/kinematics/_fold_forest.py	2026-10-26 15:23:52.117166495 +0000
+@@ -336,7 +336,11 @@
+                 edges[p, :n] = edges_p
+             n_edges[p] = n
+ 
+-        return cls(max_n_edges=max_n_edges, n_edges=n_edges, edges=edges)
++        forest = cls(max_n_edges=max_n_edges, n_edges=n_edges, edges=edges)
++        # Built to be a valid forest: PoseStackKinematicsModule need not
++        # re-validate it (the check costs a numba compile or cache load).
++        object.__setattr__(forest, "_validated_by_construction", True)
++        return forest
+ 
+     @classmethod
+     def from_edges(cls, edges: NDArray[int][:, :, 4]) -> "FoldForest":
+diff -ruN -x tests -x __pycache__ src_tmol/tmol/kinematics/_script_modules.py overlay_master/tmol/kinematics/_script_modules.py
+--- src_tmol/tmol/kinematics/_script_modules.py	2026-10-26 13:35:49.000000000 +0000
++++ overlay_master/tmol/kinematics/_script_modules.py	2026-10-26 15:23:52.121309911 +0000
+@@ -49,7 +49,8 @@
+         _annotate_packed_block_type_with_gen_scan_path_segs(pbt)
+ 
+         n_blocks = torch.sum(ps.block_type_ind != -1, dim=1).cpu().numpy()
+-        validate_fold_forest(n_blocks, ff.edges)
++        if not getattr(ff, "_validated_by_construction", False):
++            validate_fold_forest(n_blocks, ff.edges)
+ 
+         ff_edges_cpu = torch.from_numpy(ff.edges).to(torch.int32)
+         kmd = construct_kin_module_data_for_pose(ps, ff_edges_cpu)
+diff -ruN -x tests -x __pycache__ src_tmol/tmol/optimization/_minimizers.py overlay_master/tmol/optimization/_minimizers.py
+--- src_tmol/tmol/optimization/_minimizers.py	2026-10-26 13:35:49.000000000 +0000
++++ overlay_master/tmol/optimization/_minimizers.py	2026-10-26 15:24:03.519693742 +0000
+@@ -1,5 +1,6 @@
+ from __future__ import annotations
+ 
++import os
+ import time
+ from typing import TYPE_CHECKING
+ 
+@@ -120,6 +121,8 @@
+     """
+     if optimizer_kwargs is None:
+         optimizer_kwargs = {}
++    if os.environ.get("TMOL_VALUE_ONLY_LS") == "1":  # experiment switch
++        optimizer_kwargs = dict(optimizer_kwargs, value_only_line_search=True)
+ 
+     timing_device = next(sfxn_module.parameters()).device if verbose else None
+     if timing_device is not None:
+diff -ruN -x tests -x __pycache__ src_tmol/tmol/pack/compiled/compiled.cuda.cu overlay_master/tmol/pack/compiled/compiled.cuda.cu
+--- src_tmol/tmol/pack/compiled/compiled.cuda.cu	2026-10-26 13:35:49.000000000 +0000
++++ overlay_master/tmol/pack/compiled/compiled.cuda.cu	2026-10-26 15:23:52.125305509 +0000
+@@ -14,6 +14,7 @@
+ #include <cooperative_groups.h>
+ 
+ #include <type_traits>
++#include <cstdlib>
+ 
+ #include <curand.h>
+ #include <curand_kernel.h>
+@@ -514,6 +515,14 @@
+   return 0.0f;
+ }
+ 
++// Experimental run-time overrides of the annealer's trajectory counts.
++static inline int env_int_or(char const* name, int fallback) {
++  char const* value = std::getenv(name);
++  if (value == nullptr || *value == '\0') return fallback;
++  int const parsed = std::atoi(value);
++  return parsed > 0 ? parsed : fallback;
++}
++
+ template <tmol::Device D, class IG, int ChunkSize>
+ struct Annealer {
+   static auto run_simulated_annealing(ContextManager& mgr, IG ig)
+@@ -523,7 +532,7 @@
+     int const max_n_rotamers = ig.max_n_rotamers_per_pose_cpu();
+ 
+     // SA hyperparameters
+-    int const n_hitemp_simA_traj = 500;
++    int const n_hitemp_simA_traj = env_int_or("TMOL_PACK_SA_HITEMP_TRAJ", 500);
+     double const inner_iter_mult_hitemp = 1.5;
+     double const inner_iter_mult_lotemp = 0.5;
+     // Temperature schedule
+@@ -536,7 +545,7 @@
+ 
+     int const n_hitemp_simA_threads = 32 * n_poses * n_hitemp_simA_traj;
+     // Each top hitemp trajectory seeds n_lotemp_expansions lotemp trajectories
+-    int const n_lotemp_expansions = 10;
++    int const n_lotemp_expansions = env_int_or("TMOL_PACK_SA_EXPANSIONS", 10);
+     float const round1_cut = 0.25f;
+     float const round2_cut = 0.25f;
+     int const n_lotemp_simA_traj =

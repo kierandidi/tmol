@@ -1,0 +1,36 @@
+{
+ "gpu": [
+  {
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "hivrt",
+   "threads": 1
+  },
+  {
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "hivrt",
+   "threads": 1
+  },
+  {
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "hivrt",
+   "threads": 1
+  },
+  {
+   "device": "cuda",
+   "batch": 1000,
+   "dataset": "hivrt",
+   "threads": 1
+  }
+ ],
+ "cpu": [
+  {
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "hivrt",
+   "threads": 1
+  }
+ ]
+}

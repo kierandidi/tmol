@@ -1,0 +1,34 @@
+{
+ "torsion": {
+  "expected": 162,
+  "successful": 155,
+  "failed": {
+   "('tmol', 'cuda', 1000, 'hivrt')": "ValueError: Declared polymer bond crosses a geometry gap between residue indices 537 and 538 (cutoff 2.4 Angstrom). Correct the supplied connectivity/coordinates, or set missing_density_distance_threshold=0 to retain the declared topology."
+  },
+  "pending": [
+   "('tmol', 'cuda', 1000, '5opj')",
+   "('tmol', 'cuda', 1000, '1s78')",
+   "('tmol', 'cuda', 1000, 'ache')",
+   "('tmol', 'cuda', 1000, 'cox1')",
+   "('tmol', 'cuda', 1000, '3bbb')",
+   "('tmol', 'cuda', 1000, '1kx5')"
+  ],
+  "complete": false
+ },
+ "cartesian": {
+  "expected": 162,
+  "successful": 156,
+  "failed": {
+   "('tmol', 'cuda', 1000, 'hivrt')": "ValueError: Declared polymer bond crosses a geometry gap between residue indices 537 and 538 (cutoff 2.4 Angstrom). Correct the supplied connectivity/coordinates, or set missing_density_distance_threshold=0 to retain the declared topology."
+  },
+  "pending": [
+   "('tmol', 'cuda', 1000, '5opj')",
+   "('tmol', 'cuda', 1000, '1s78')",
+   "('tmol', 'cuda', 1000, 'cox1')",
+   "('tmol', 'cuda', 1000, '3bbb')",
+   "('tmol', 'cuda', 1000, '1kx5')"
+  ],
+  "complete": false
+ },
+ "minimization": "50 L-BFGS iterations per minimization (tmol: fixed_iterations; PyRosetta: max_iter=50, tolerance 1e-12)"
+}

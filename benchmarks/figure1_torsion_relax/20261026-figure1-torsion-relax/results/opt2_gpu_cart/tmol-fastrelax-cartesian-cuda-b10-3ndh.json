@@ -1,0 +1,79 @@
+{
+  "engine": "tmol",
+  "protocol": "fastrelax",
+  "relax_mode": "cartesian",
+  "dataset_id": "3ndh",
+  "modality": "protein_nucleic",
+  "device": "cuda",
+  "batch_size": 10,
+  "atoms": 7657,
+  "residues": 442,
+  "input_path": "/mnt/home/kdidi/tmol-paper-benchmark/data/rcsb/clean/3ndh.pdb",
+  "input_sha256": "3a9deea05ab6ef401a77bb7c1a79399c9e7de1fc749301088634732629630e38",
+  "cpu_threads_requested": 1,
+  "seed": 20260906,
+  "num_repeats": 1,
+  "timed_samples": 1,
+  "engine_version": "0.2.0",
+  "engine_commit": "uw-ipd/tmol v0.2.0 (release wheel; master 60b0d77df is v0.2.0+10 docs commits)",
+  "machine": {
+    "hostname": "slurm-h200-238-051",
+    "platform": "Linux-6.8.12-680-6063-coreweave-amd64-f81899c8-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "cpu_model": "INTEL(R) XEON(R) PLATINUM 8562Y+",
+    "gpu": "NVIDIA H200, GPU-8a29fae9-7ab2-c2b2-4c2a-4eeb7c260901, 595.71.05",
+    "slurm_job_id": "744839",
+    "slurm_cpus_per_task": "8",
+    "cuda_visible_devices": "0"
+  },
+  "cpu_affinity": [
+    8,
+    9,
+    10,
+    11,
+    72,
+    73,
+    74,
+    75
+  ],
+  "source_harness": "/home/kdidi/tmol-paper-benchmark/runs/20261026-figure1-torsion-relax/src",
+  "status": "ok",
+  "started_utc": "2026-10-26T15:25:14Z",
+  "seconds_per_batch_samples": [
+    19.958739180117846
+  ],
+  "seconds_per_structure_samples": [
+    1.9958739180117846
+  ],
+  "iterations_per_sample": 1,
+  "setup_seconds": 10.478130154311657,
+  "score_terms": {},
+  "peak_memory_bytes": 1119489024,
+  "tmol_import_version": "0.2.0",
+  "torch_version": "2.13.0+cu132",
+  "torch_cuda_version": "13.2",
+  "torch_num_threads": 1,
+  "gpu_properties": {
+    "name": "NVIDIA H200",
+    "total_memory": 150111977472,
+    "compute_capability": "9.0"
+  },
+  "validation_score_mean": -2009.1024169921875,
+  "validation_score_min": -2015.5965576171875,
+  "validation_score_max": -2003.120361328125,
+  "initial_score_mean": -244.05517578125,
+  "final_scores_first10": [
+    -2004.7984619140625,
+    -2012.2628173828125,
+    -2015.5965576171875,
+    -2008.7437744140625,
+    -2006.1951904296875,
+    -2010.10791015625,
+    -2011.0877685546875,
+    -2008.3814697265625,
+    -2010.728759765625,
+    -2003.120361328125
+  ],
+  "elapsed_seconds": 38.70651771314442,
+  "finished_utc": "2026-10-26T15:25:53Z"
+}

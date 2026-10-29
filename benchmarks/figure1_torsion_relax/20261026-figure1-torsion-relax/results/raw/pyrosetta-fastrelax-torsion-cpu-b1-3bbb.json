@@ -1,0 +1,53 @@
+{
+  "engine": "pyrosetta",
+  "protocol": "fastrelax",
+  "relax_mode": "torsion",
+  "dataset_id": "3bbb",
+  "modality": "protein_nucleic",
+  "device": "cpu",
+  "batch_size": 1,
+  "atoms": 14732,
+  "residues": 906,
+  "input_path": "/mnt/home/kdidi/tmol-paper-benchmark/data/rcsb/clean/3bbb.pdb",
+  "input_sha256": "a89870622acc0e922fc6a6037be4b4ed02eceb2994cc959291e649a6258505cf",
+  "cpu_threads_requested": 1,
+  "seed": 20260906,
+  "num_repeats": 1,
+  "timed_samples": 1,
+  "engine_version": "2024.39",
+  "engine_commit": "59628fbc5bc09f1221e1642f1f8d157ce49b1410",
+  "machine": {
+    "hostname": "slurm-h200-238-039",
+    "platform": "Linux-6.8.12-680-6063-coreweave-amd64-f81899c8-x86_64-with-glibc2.39",
+    "python": "3.12.13",
+    "cpu_model": "INTEL(R) XEON(R) PLATINUM 8562Y+",
+    "gpu": null,
+    "slurm_job_id": "744606",
+    "slurm_cpus_per_task": "2",
+    "cuda_visible_devices": null
+  },
+  "cpu_affinity": [
+    20,
+    84
+  ],
+  "source_harness": "/home/kdidi/tmol-paper-benchmark/runs/20261026-figure1-torsion-relax/src",
+  "status": "ok",
+  "started_utc": "2026-10-26T10:54:29Z",
+  "score_function": "beta_nov16",
+  "seconds_per_batch_samples": [
+    1110.0982825881802
+  ],
+  "seconds_per_structure_samples": [
+    1110.0982825881802
+  ],
+  "iterations_per_sample": 1,
+  "setup_seconds": 0.00590702798217535,
+  "score_terms": {},
+  "peak_memory_bytes": null,
+  "initial_score_mean": -767.6942383270627,
+  "validation_score_mean": -2703.678833824224,
+  "pyrosetta_version_string": "PyRosetta-4 2024 [Rosetta PyRosetta4.Release.python312.linux 2024.39+release.59628fbc5bc09f1221e1642f1f8d157ce49b1410 2024-09-23T07:49:48] retrieved from: http://www.pyrosetta.org",
+  "actual_rosetta_threads": 1,
+  "elapsed_seconds": 1114.179780489765,
+  "finished_utc": "2026-10-26T11:13:04Z"
+}

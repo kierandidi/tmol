@@ -1,0 +1,18 @@
+{"engine": "tmol", "device": "cuda", "batch": 10, "dataset": "5yzf", "threads": 1, "mode": "torsion"} SLURM_JOB_ID 744783 node slurm-h200-238-039
+Environment variable CCD_MIRROR_PATH not set. Will not be able to use function requiring this variable. To set it you may:
+  (1) add the line 'export VAR_NAME=path/to/variable' to your .bashrc or .zshrc file
+  (2) set it in your current shell with 'export VAR_NAME=path/to/variable'
+  (3) write it to a .env file in the root of the atomworks.io repository
+Environment variable PDB_MIRROR_PATH not set. Will not be able to use function requiring this variable. To set it you may:
+  (1) add the line 'export VAR_NAME=path/to/variable' to your .bashrc or .zshrc file
+  (2) set it in your current shell with 'export VAR_NAME=path/to/variable'
+  (3) write it to a .env file in the root of the atomworks.io repository
+Inaccurate G! Segment= 2  Step= 4.547473508864641e-13  Deriv= -148048.65625  Finite= 3087007744.0
+Inaccurate G! Segment= 3  Step= 9.094947017729282e-13  Deriv= -907.3955078125  Finite= 536870912.0
+Inaccurate G! Segment= 5  Step= 9.094947017729282e-13  Deriv= -5139.66796875  Finite= 603979776.0
+Inaccurate G! Segment= 0  Step= 4.547473508864641e-13  Deriv= -3773.484375  Finite= 335544320.0
+Inaccurate G! Segment= 6  Step= 4.547473508864641e-13  Deriv= -222.49908447265625  Finite= 1543503872.0
+Inaccurate G! Segment= 2  Step= 9.094947017729282e-13  Deriv= -148.37158203125  Finite= 201326592.0
+Inaccurate G! Segment= 3  Step= 9.094947017729282e-13  Deriv= -1758.5791015625  Finite= 469762048.0
+Inaccurate G! Segment= 7  Step= 9.094947017729282e-13  Deriv= -670.078125  Finite= 335544320.0
+{"engine": "tmol", "relax_mode": "torsion", "dataset_id": "5yzf", "device": "cuda", "batch_size": 10, "status": "ok", "error": null, "elapsed_seconds": 28.389825482852757, "initial_score_mean": -72.00615692138672, "validation_score_mean": -338.2398376464844}

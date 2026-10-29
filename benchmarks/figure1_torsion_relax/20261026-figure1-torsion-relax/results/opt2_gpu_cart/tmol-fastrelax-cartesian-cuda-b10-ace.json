@@ -1,0 +1,79 @@
+{
+  "engine": "tmol",
+  "protocol": "fastrelax",
+  "relax_mode": "cartesian",
+  "dataset_id": "ace",
+  "modality": "protein_ligand",
+  "device": "cuda",
+  "batch_size": 10,
+  "atoms": 9278,
+  "residues": 575,
+  "input_path": "/mnt/home/kdidi/tmol-paper-benchmark/runs/20261026-figure1-torsion-relax/data/ace_complex_nometals.pdb",
+  "input_sha256": "5e3b99bc93fbb05476e02bdd67aebeb310d0c2746af774e9109c7f78bb4b0e6f",
+  "cpu_threads_requested": 1,
+  "seed": 20260906,
+  "num_repeats": 1,
+  "timed_samples": 1,
+  "engine_version": "0.2.0",
+  "engine_commit": "uw-ipd/tmol v0.2.0 (release wheel; master 60b0d77df is v0.2.0+10 docs commits)",
+  "machine": {
+    "hostname": "slurm-h200-238-039",
+    "platform": "Linux-6.8.12-680-6063-coreweave-amd64-f81899c8-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "cpu_model": "INTEL(R) XEON(R) PLATINUM 8562Y+",
+    "gpu": "NVIDIA H200, GPU-f0dccc40-4d63-fd40-9474-9fa42eea40c9, 595.71.05",
+    "slurm_job_id": "744832",
+    "slurm_cpus_per_task": "8",
+    "cuda_visible_devices": "0"
+  },
+  "cpu_affinity": [
+    36,
+    37,
+    38,
+    39,
+    100,
+    101,
+    102,
+    103
+  ],
+  "source_harness": "/home/kdidi/tmol-paper-benchmark/runs/20261026-figure1-torsion-relax/src",
+  "status": "ok",
+  "started_utc": "2026-10-26T15:24:28Z",
+  "seconds_per_batch_samples": [
+    26.964007118251175
+  ],
+  "seconds_per_structure_samples": [
+    2.6964007118251176
+  ],
+  "iterations_per_sample": 1,
+  "setup_seconds": 5.995981024112552,
+  "score_terms": {},
+  "peak_memory_bytes": 1552329728,
+  "tmol_import_version": "0.2.0",
+  "torch_version": "2.13.0+cu132",
+  "torch_cuda_version": "13.2",
+  "torch_num_threads": 1,
+  "gpu_properties": {
+    "name": "NVIDIA H200",
+    "total_memory": 150111977472,
+    "compute_capability": "9.0"
+  },
+  "validation_score_mean": -1996.5185546875,
+  "validation_score_min": -2006.8695068359375,
+  "validation_score_max": -1991.2615966796875,
+  "initial_score_mean": 120.56853485107422,
+  "final_scores_first10": [
+    -1998.3743896484375,
+    -1992.52001953125,
+    -1996.38232421875,
+    -1991.2615966796875,
+    -1992.9998779296875,
+    -1994.1090087890625,
+    -1997.912353515625,
+    -2006.8695068359375,
+    -1991.97265625,
+    -2002.7840576171875
+  ],
+  "elapsed_seconds": 42.485553356818855,
+  "finished_utc": "2026-10-26T15:25:10Z"
+}

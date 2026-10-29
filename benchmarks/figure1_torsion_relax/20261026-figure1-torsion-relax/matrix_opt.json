@@ -1,0 +1,118 @@
+{
+ "gpu": [
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "5uoi",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "5yzf",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "hsp90",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "1ysa",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "5uoi",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "5yzf",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "hsp90",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "1ysa",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "5uoi",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "5yzf",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "hsp90",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 100,
+   "dataset": "1ysa",
+   "threads": 1,
+   "mode": "torsion"
+  }
+ ],
+ "cpu": [
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "5uoi",
+   "threads": 32,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "5yzf",
+   "threads": 32,
+   "mode": "torsion"
+  }
+ ]
+}

@@ -1,0 +1,79 @@
+{
+  "date": "2026-10-26",
+  "location": "CoreWeave east (hpc-high, H200)",
+  "remote_run": "/mnt/home/kdidi/tmol-paper-benchmark/runs/20261026-figure1-torsion-relax",
+  "purpose": "Figure 1 FastRelax series rerun with torsion-space (atom-tree / kinematic) relax; all earlier Figure 1 FastRelax runs used Cartesian relax.",
+  "compared_against": "runs/20261005-fastrelax-f92d (tmol 0.1.58 + PyRosetta 2024.39, Cartesian)",
+  "tmol": {
+    "release": "uw-ipd/tmol v0.2.0 (2026-10-20), includes #602 'restore kin relax' (KinematicMinimizer / DefaultKinematicMinimizer)",
+    "origin_master_checked": "60b0d77df99dcb0e24848117a873544c448cd7c4 (= v0.2.0 + 10 docs/tutorial commits)",
+    "wheels": {
+      "tmol-0.2.0-cp312-cp312-manylinux_2_28_x86_64.whl": "fe0d4661e1f7697fe02be087e4dffea0a00846bcf63c6b07e7fe9c974692703f",
+      "tmol_ops_cu13-0.2.0-cp312-cp312-manylinux_2_28_x86_64.whl": "34d03dc680da68e075d2dfad1c1cc489bb3b4d37f5cb4b2a5e3216afcb5b866c"
+    },
+    "wheel_sha256_match_github_release_digests": true,
+    "software": "PyTorch 2.13.0+cu132 (container), CUDA runtime 13.2, tmol ops built for CUDA 13; AtomWorks 3.0.4 (required by tmol 0.2.0; the 0.1.58 run used 2.1.1/git); see metadata/pip-freeze.txt",
+    "unmerged_branches_used": "none (PRs #614/#615 not needed: #602 is merged and released in v0.2.0)"
+  },
+  "pyrosetta": {
+    "version": "2024.39",
+    "commit": "59628fbc5bc09f1221e1642f1f8d157ce49b1410"
+  },
+  "relax_definitions": {
+    "tmol_torsion": "tmol.relax.fast_relax(num_repeats=1, default MonomerRelax2019 schedule) with min_fn=DefaultKinematicMinimizer(cuda_graph=True on CUDA, False on CPU), MoveMap.from_pose_stack with move_all_jumps=True and move_all_named_torsions=True (all backbone/side-chain/ligand torsions and non-root jumps; bond lengths and angles fixed), FoldForest.reasonable_fold_forest, score function beta2016 (unchanged), seed 20260906. Same recipe as tmol's own test_kin_fast_relax_ubq.",
+    "tmol_cartesian_control": "same harness, fast_relax default Cartesian minimizer (CartesianMoveMap, graph mode auto) on tmol 0.2.0, to separate the torsion effect from the 0.1.58->0.2.0 version change.",
+    "pyrosetta_torsion": "protocols.relax.FastRelax(sfxn, 1) with MonomerRelax2019 script lines, cartesian(False), MoveMap bb=chi=jump=True; sfxn beta_nov16 (protein, protein-nucleic) / beta_genpot (protein-ligand). Differs from the Cartesian runs only by pro_close 1.25 instead of 0 and no cart_bonded 0.5 (diff of the weight files).",
+    "pyrosetta_cartesian_old": "relax.cartesian(True), beta_nov16_cart / beta_genpot_cart",
+    "scoring_difference_note": "tmol keeps its cart_* bonded terms and has no pro_close in torsion mode; PyRosetta torsion drops cart_bonded and adds pro_close. Final energies of the two engines are therefore not directly comparable (they were not exactly comparable before either)."
+  },
+  "timing_contract": "unchanged from the Cartesian run: one seeded one-repeat FastRelax per point, input/scorer/move-map construction outside the timed interval, no warm-up (first-call JIT and kernel-loading costs are inside the interval, for both modes), GPU synchronised before the final clock read, one process per point; seconds/structure = batch seconds / batch size.",
+  "series": [
+    "PyRosetta CPU B1 (1 thread)",
+    "tmol CPU B1 (32 intra-op threads)",
+    "tmol GPU B1",
+    "tmol GPU B10",
+    "tmol GPU B100",
+    "tmol GPU B1000"
+  ],
+  "systems": "same 12 tmol systems and 27 PyRosetta inputs as the Cartesian matrix (matrix.json)",
+  "loader_note": "tmol 0.2.0 renamed pose_stack_from_pdb/_biotite; harness uses pose_stack_from_file / pose_stack_from_atom_array with identical options. Protein/NA initial scores match the 0.1.58 run; protein-ligand initial scores differ (e.g. hsp90 386.1 vs 312.7) because tmol 0.2.0 prepares ligands differently, so old-vs-new tmol energies are not comparable for ligand systems - use the same-version Cartesian control.",
+  "slurm_jobs": {
+    "setup": "744401",
+    "pilots": [
+      "744403",
+      "744404",
+      "744405",
+      "744406",
+      "744423",
+      "744424",
+      "744425",
+      "744438",
+      "744439"
+    ],
+    "pyrosetta_torsion_27": "744430",
+    "tmol_gpu_torsion_48": "744476",
+    "tmol_cpu_torsion_12": "744477",
+    "tmol_gpu_cartesian_control_48": "744478",
+    "tmol_cpu_cartesian_control_12": "744479"
+  },
+  "nodes_note": "per-point node, GPU, CPU model and Slurm job id are in each results/raw JSON under machine; GPU and CPU array tasks of this run (and of the control) may share a node with each other",
+  "expected_measurements": 87,
+  "successful_measurements": 87,
+  "failed": [],
+  "control_failures": [
+    "tmol-fastrelax-cartesian-cuda-b1000-1o7j (CUDA OOM)",
+    "tmol-fastrelax-cartesian-cuda-b1000-6q1h (CUDA OOM)"
+  ],
+  "old_run_incompleteness": "the figure data snapshot of the Cartesian run was 68/87 complete (10 tmol GPU B1000 points and 9 PyRosetta points pending); the raw directory later holds all 87 files and the comparison uses those",
+  "outputs": {
+    "summary_csv": "summary/fastrelax_torsion/timing_summary.csv",
+    "status": "summary/fastrelax_torsion/status.json",
+    "comparison": "summary/comparison_old_cartesian_vs_torsion.{csv,md}",
+    "control_csv": "summary/fastrelax_cartesian_tmol020_control/timing_summary.csv"
+  },
+  "optimisation_experiments": {
+    "dir": "opt/",
+    "summary": "summary/optimised_vs_baseline.md",
+    "note": "scratch patches to tmol (v0.2.0 and master 1fbd25f34); not part of the Figure 1 numbers; JIT-compiled kernels; SA trajectory budget reduced to 100 (env var), numba cache, trusted fold forest, value-only line search"
+  }
+}

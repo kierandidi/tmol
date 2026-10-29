@@ -1,0 +1,70 @@
+{
+  "engine": "tmol",
+  "protocol": "fastrelax",
+  "relax_mode": "cartesian",
+  "dataset_id": "5uoi",
+  "modality": "protein",
+  "device": "cuda",
+  "batch_size": 1,
+  "atoms": 730,
+  "residues": 43,
+  "input_path": "/mnt/home/kdidi/tmol-paper-benchmark/runs/20261026-figure1-torsion-relax/data/bysize_040_res_5uoi.pdb",
+  "input_sha256": "5ce03554bd638f3da97e2186de5d882f7913fb95a54307d1e20c7e28b5929684",
+  "cpu_threads_requested": 1,
+  "seed": 20260906,
+  "num_repeats": 1,
+  "timed_samples": 1,
+  "engine_version": "0.2.0",
+  "engine_commit": "uw-ipd/tmol v0.2.0 (release wheel; master 60b0d77df is v0.2.0+10 docs commits)",
+  "machine": {
+    "hostname": "slurm-h200-238-051",
+    "platform": "Linux-6.8.12-680-6063-coreweave-amd64-f81899c8-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "cpu_model": "INTEL(R) XEON(R) PLATINUM 8562Y+",
+    "gpu": "NVIDIA H200, GPU-8a29fae9-7ab2-c2b2-4c2a-4eeb7c260901, 595.71.05",
+    "slurm_job_id": "744797",
+    "slurm_cpus_per_task": "8",
+    "cuda_visible_devices": "0"
+  },
+  "cpu_affinity": [
+    8,
+    9,
+    10,
+    11,
+    72,
+    73,
+    74,
+    75
+  ],
+  "source_harness": "/home/kdidi/tmol-paper-benchmark/runs/20261026-figure1-torsion-relax/src",
+  "status": "ok",
+  "started_utc": "2026-10-26T15:22:06Z",
+  "seconds_per_batch_samples": [
+    2.7129355277866125
+  ],
+  "seconds_per_structure_samples": [
+    2.7129355277866125
+  ],
+  "iterations_per_sample": 1,
+  "setup_seconds": 10.123648829758167,
+  "score_terms": {},
+  "peak_memory_bytes": 150859776,
+  "tmol_import_version": "0.2.0",
+  "torch_version": "2.13.0+cu132",
+  "torch_cuda_version": "13.2",
+  "torch_num_threads": 1,
+  "gpu_properties": {
+    "name": "NVIDIA H200",
+    "total_memory": 150111977472,
+    "compute_capability": "9.0"
+  },
+  "validation_score_mean": -143.39932250976562,
+  "validation_score_min": -143.39932250976562,
+  "validation_score_max": -143.39932250976562,
+  "initial_score_mean": -60.90997314453125,
+  "final_scores_first10": [
+    -143.39932250976562
+  ],
+  "elapsed_seconds": 21.75385119020939,
+  "finished_utc": "2026-10-26T15:22:27Z"
+}

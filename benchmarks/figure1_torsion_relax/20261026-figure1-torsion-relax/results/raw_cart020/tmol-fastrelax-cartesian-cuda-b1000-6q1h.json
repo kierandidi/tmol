@@ -1,0 +1,42 @@
+{
+  "engine": "tmol",
+  "protocol": "fastrelax",
+  "relax_mode": "cartesian",
+  "dataset_id": "6q1h",
+  "modality": "protein_nucleic",
+  "device": "cuda",
+  "batch_size": 1000,
+  "atoms": 22567,
+  "residues": 1445,
+  "input_path": "/mnt/home/kdidi/tmol-paper-benchmark/data/rcsb/clean/6q1h.pdb",
+  "input_sha256": "c300109a5e1698287a4e1f90f1dafb415bba3ba7ae7c7066bbd09283dc4ff4e0",
+  "cpu_threads_requested": 1,
+  "seed": 20260906,
+  "num_repeats": 1,
+  "timed_samples": 1,
+  "engine_version": "0.2.0",
+  "engine_commit": "uw-ipd/tmol v0.2.0 (release wheel; master 60b0d77df is v0.2.0+10 docs commits)",
+  "machine": {
+    "hostname": "slurm-h200-244-049",
+    "platform": "Linux-6.8.12-680-6063-coreweave-amd64-f81899c8-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "cpu_model": "INTEL(R) XEON(R) PLATINUM 8562Y+",
+    "gpu": "NVIDIA H200, GPU-ca70345b-195f-5984-97a6-f444d53dcbea, 595.71.05",
+    "slurm_job_id": "744478",
+    "slurm_cpus_per_task": "4",
+    "cuda_visible_devices": "0"
+  },
+  "cpu_affinity": [
+    48,
+    49,
+    112,
+    113
+  ],
+  "source_harness": "/home/kdidi/tmol-paper-benchmark/runs/20261026-figure1-torsion-relax/src",
+  "status": "failed",
+  "started_utc": "2026-10-26T11:18:57Z",
+  "error": "OutOfMemoryError: CUDA out of memory. Tried to allocate 516.00 MiB. GPU 0 has a total capacity of 139.80 GiB of which 471.12 MiB is free. Including non-PyTorch memory, this process has 139.33 GiB memory in use. Of the allocated memory 138.41 GiB is allocated by PyTorch, with 9.20 GiB allocated in private pools (e.g., CUDA Graphs), and 180.26 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://docs.pytorch.org/docs/stable/notes/cuda.html#optimizing-memory-usage-with-pytorch-cuda-alloc-conf)",
+  "traceback": "Traceback (most recent call last):\n  File \"/mnt/home/kdidi/tmol-paper-benchmark/runs/20261026-figure1-torsion-relax/src/torsion_fastrelax.py\", line 219, in <module>\n    result.update(tmol_fastrelax(row, args.device, args.batch, args.threads,\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/mnt/home/kdidi/tmol-paper-benchmark/runs/20261026-figure1-torsion-relax/src/torsion_fastrelax.py\", line 110, in tmol_fastrelax\n    relaxed = fast_relax(pose, sfxn, palette, move_map, fold_forest,\n              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/mnt/home/kdidi/tmol-paper-benchmark/runs/20261026-figure1-torsion-relax/env/lib/python3.12/site-packages/tmol/relax/_fast_relax.py\", line 378, in fast_relax\n    ps = relax_pack_min_step(\n         ^^^^^^^^^^^^^^^^^^^^\n  File \"/mnt/home/kdidi/tmol-paper-benchmark/runs/20261026-figure1-torsion-relax/env/lib/python3.12/site-packages/tmol/relax/_fast_relax.py\", line 460, in relax_pack_min_step\n    minimized_pose_stack = min_fn(\n                           ^^^^^^^\n  File \"/mnt/home/kdidi/tmol-paper-benchmark/runs/20261026-figure1-torsion-relax/env/lib/python3.12/site-packages/tmol/relax/_fast_relax.py\", line 169, in __call__\n    return self.minimizer(\n           ^^^^^^^^^^^^^^^\n  File \"/mnt/home/kdidi/tmol-paper-benchmark/runs/20261026-figure1-torsion-relax/env/lib/python3.12/site-packages/tmol/optimization/_minimizers.py\", line 404, in __call__\n    result = run_min(\n             ^^^^^^^^\n  File \"/mnt/home/kdidi/tmol-paper-benchmark/runs/20261026-figure1-torsion-relax/env/lib/python3.12/site-packages/tmol/optimization/_minimizers.py\", line 148, in run_min\n    optimizer.step(closure)\n  File \"/usr/local/lib/python3.12/dist-packages/torch/optim/optimizer.py\", line 530, in wrapper\n    out = func(*args, **kwargs)\n          ^^^^^^^^^^^^^^^^^^^^^\n  File \"/mnt/home/kdidi/tmol-paper-benchmark/runs/20261026-figure1-torsion-relax/env/lib/python3.12/site-packages/tmol/optimization/_lbfgs_armijo.py\", line 1010, in step\n    self._compute_search_direction(ctx)\n  File \"/mnt/home/kdidi/tmol-paper-benchmark/runs/20261026-figure1-torsion-relax/env/lib/python3.12/site-packages/tmol/optimization/_lbfgs_armijo.py\", line 801, in _compute_search_direction\n    _lbfgs_two_loop(\n  File \"/mnt/home/kdidi/tmol-paper-benchmark/runs/20261026-figure1-torsion-relax/env/lib/python3.12/site-packages/tmol/optimization/_lbfgs_armijo.py\", line 99, in _lbfgs_two_loop\n    q = q - torch.bmm(u.unsqueeze(1), Y_by_pose).squeeze(1)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/torch/_native/registry.py\", line 925, in eager_router\n    return _fallback.call_boxed(keyset, *args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntorch.OutOfMemoryError: CUDA out of memory. Tried to allocate 516.00 MiB. GPU 0 has a total capacity of 139.80 GiB of which 471.12 MiB is free. Including non-PyTorch memory, this process has 139.33 GiB memory in use. Of the allocated memory 138.41 GiB is allocated by PyTorch, with 9.20 GiB allocated in private pools (e.g., CUDA Graphs), and 180.26 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://docs.pytorch.org/docs/stable/notes/cuda.html#optimizing-memory-usage-with-pytorch-cuda-alloc-conf)\n",
+  "elapsed_seconds": 2220.5365101881325,
+  "finished_utc": "2026-10-26T11:55:58Z"
+}

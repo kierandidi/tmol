@@ -1,0 +1,77 @@
+{
+  "engine": "tmol",
+  "protocol": "fastrelax",
+  "relax_mode": "torsion",
+  "dataset_id": "2mtq",
+  "modality": "protein",
+  "device": "cuda",
+  "min_steps": 50,
+  "batch_size": 100,
+  "atoms": 1116,
+  "residues": 73,
+  "input_path": "/mnt/home/kdidi/tmol-paper-benchmark/runs/20261029-figure1-fixed50-min/data/bysize_075_res_2mtq.pdb",
+  "input_sha256": "a62a5914f428e97f5d257e977658754b3d8051f95edaea1436ef53e7339ed340",
+  "cpu_threads_requested": 1,
+  "seed": 20260906,
+  "num_repeats": 1,
+  "timed_samples": 1,
+  "engine_version": "0.2.0",
+  "engine_commit": "uw-ipd/tmol v0.2.0 (release wheel; master 60b0d77df is v0.2.0+10 docs commits)",
+  "machine": {
+    "hostname": "slurm-h200-244-151",
+    "platform": "Linux-6.8.12-680-6063-coreweave-amd64-f81899c8-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "cpu_model": "INTEL(R) XEON(R) PLATINUM 8562Y+",
+    "gpu": "NVIDIA H200, GPU-ff69b33f-495a-3922-84f3-e5f5861b8d96, 595.71.05",
+    "slurm_job_id": "773136",
+    "slurm_cpus_per_task": "4",
+    "cuda_visible_devices": "0"
+  },
+  "cpu_affinity": [
+    0,
+    2,
+    64,
+    66
+  ],
+  "source_harness": "/home/kdidi/tmol-paper-benchmark/runs/20261029-figure1-fixed50-min/src",
+  "status": "ok",
+  "started_utc": "2026-10-29T18:25:43Z",
+  "seconds_per_batch_samples": [
+    25.134938457980752
+  ],
+  "seconds_per_structure_samples": [
+    0.25134938457980754
+  ],
+  "iterations_per_sample": 1,
+  "setup_seconds": 8.888780994340777,
+  "score_terms": {},
+  "peak_memory_bytes": 629561344,
+  "tmol_import_version": "0.2.0",
+  "torch_version": "2.13.0+cu132",
+  "torch_cuda_version": "13.2",
+  "torch_num_threads": 1,
+  "gpu_properties": {
+    "name": "NVIDIA H200",
+    "total_memory": 150111977472,
+    "compute_capability": "9.0"
+  },
+  "validation_score_mean": -112.66996002197266,
+  "validation_score_min": -121.84685516357422,
+  "validation_score_max": -105.97413635253906,
+  "initial_score_mean": -71.61483764648438,
+  "final_scores_first10": [
+    -112.09305572509766,
+    -113.60393524169922,
+    -114.88553619384766,
+    -116.95909881591797,
+    -109.92512512207031,
+    -111.08821868896484,
+    -116.90038299560547,
+    -111.51182556152344,
+    -113.43470764160156,
+    -112.60575866699219
+  ],
+  "kinematic_cuda_graph": true,
+  "elapsed_seconds": 41.4456563424319,
+  "finished_utc": "2026-10-29T18:26:24Z"
+}

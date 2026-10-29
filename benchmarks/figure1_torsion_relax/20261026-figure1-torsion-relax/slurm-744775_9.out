@@ -1,0 +1,72 @@
+{"engine": "tmol", "device": "cuda", "batch": 100, "dataset": "5yzf", "threads": 1, "mode": "torsion"} SLURM_JOB_ID 744787 node slurm-h200-238-039
+Environment variable CCD_MIRROR_PATH not set. Will not be able to use function requiring this variable. To set it you may:
+  (1) add the line 'export VAR_NAME=path/to/variable' to your .bashrc or .zshrc file
+  (2) set it in your current shell with 'export VAR_NAME=path/to/variable'
+  (3) write it to a .env file in the root of the atomworks.io repository
+Environment variable PDB_MIRROR_PATH not set. Will not be able to use function requiring this variable. To set it you may:
+  (1) add the line 'export VAR_NAME=path/to/variable' to your .bashrc or .zshrc file
+  (2) set it in your current shell with 'export VAR_NAME=path/to/variable'
+  (3) write it to a .env file in the root of the atomworks.io repository
+Inaccurate G! Segment= 54  Step= 4.547473508864641e-13  Deriv= -836.427734375  Finite= 469762048.0
+Inaccurate G! Segment= 66  Step= 9.094947017729282e-13  Deriv= -2781.99609375  Finite= 1744830464.0
+Inaccurate G! Segment= 73  Step= 4.547473508864641e-13  Deriv= -71690.2890625  Finite= 1073741824.0
+Inaccurate G! Segment= 61  Step= 4.547473508864641e-13  Deriv= -282.637939453125  Finite= 1275068416.0
+Inaccurate G! Segment= 71  Step= 9.094947017729282e-13  Deriv= -994.5029296875  Finite= 369098752.0
+Inaccurate G! Segment= 25  Step= 4.547473508864641e-13  Deriv= -70794.09375  Finite= 1677721600.0
+Inaccurate G! Segment= 92  Step= 4.547473508864641e-13  Deriv= -343.4503173828125  Finite= 805306368.0
+Inaccurate G! Segment= 38  Step= 4.547473508864641e-13  Deriv= -1279.974609375  Finite= 671088640.0
+Inaccurate G! Segment= 10  Step= 4.547473508864641e-13  Deriv= -32576.40625  Finite= 939524096.0
+Inaccurate G! Segment= 35  Step= 4.547473508864641e-13  Deriv= -151944.96875  Finite= 2281701376.0
+Inaccurate G! Segment= 29  Step= 9.094947017729282e-13  Deriv= -20522.078125  Finite= 436207616.0
+Inaccurate G! Segment= 19  Step= 9.094947017729282e-13  Deriv= -18623.28125  Finite= 268435456.0
+Inaccurate G! Segment= 12  Step= 9.094947017729282e-13  Deriv= -1818.595703125  Finite= 536870912.0
+Inaccurate G! Segment= 61  Step= 9.094947017729282e-13  Deriv= -327.08154296875  Finite= 503316480.0
+Inaccurate G! Segment= 29  Step= 9.094947017729282e-13  Deriv= -53271.6015625  Finite= 2046820352.0
+Inaccurate G! Segment= 8  Step= 4.547473508864641e-13  Deriv= -64.8193359375  Finite= 939524096.0
+Inaccurate G! Segment= 25  Step= 4.547473508864641e-13  Deriv= -1855.552734375  Finite= 469762048.0
+Inaccurate G! Segment= 24  Step= 4.547473508864641e-13  Deriv= -53834.515625  Finite= 6241124352.0
+Inaccurate G! Segment= 70  Step= 2.2737367544323206e-13  Deriv= -94740.640625  Finite= 2415919104.0
+Inaccurate G! Segment= 13  Step= 4.547473508864641e-13  Deriv= -39763.5078125  Finite= 335544320.0
+Inaccurate G! Segment= 54  Step= 4.547473508864641e-13  Deriv= -94106.3125  Finite= 2885681152.0
+Inaccurate G! Segment= 33  Step= 9.094947017729282e-13  Deriv= -26947.916015625  Finite= 201326592.0
+Inaccurate G! Segment= 52  Step= 9.094947017729282e-13  Deriv= -1488.224609375  Finite= 402653184.0
+Inaccurate G! Segment= 34  Step= 9.094947017729282e-13  Deriv= -70589.8203125  Finite= 1040187392.0
+Inaccurate G! Segment= 99  Step= 9.094947017729282e-13  Deriv= -35523.109375  Finite= 234881024.0
+Inaccurate G! Segment= 17  Step= 4.547473508864641e-13  Deriv= -1280.7109375  Finite= 268435456.0
+Inaccurate G! Segment= 45  Step= 4.547473508864641e-13  Deriv= -19618.2421875  Finite= 1140850688.0
+Inaccurate G! Segment= 5  Step= 9.094947017729282e-13  Deriv= -590.3779296875  Finite= 201326592.0
+Inaccurate G! Segment= 66  Step= 9.094947017729282e-13  Deriv= -75.069091796875  Finite= 436207616.0
+Inaccurate G! Segment= 50  Step= 9.094947017729282e-13  Deriv= -12921.275390625  Finite= 234881024.0
+Inaccurate G! Segment= 75  Step= 4.547473508864641e-13  Deriv= -133.66473388671875  Finite= 1140850688.0
+Inaccurate G! Segment= 87  Step= 4.547473508864641e-13  Deriv= -928.9610595703125  Finite= 134217728.0
+Inaccurate G! Segment= 84  Step= 4.547473508864641e-13  Deriv= -238.7099609375  Finite= 671088640.0
+Inaccurate G! Segment= 2  Step= 4.547473508864641e-13  Deriv= -36742.06640625  Finite= 67108864.0
+Inaccurate G! Segment= 30  Step= 9.094947017729282e-13  Deriv= -972.191650390625  Finite= 1174405120.0
+Inaccurate G! Segment= 64  Step= 9.094947017729282e-13  Deriv= -40.949951171875  Finite= 838860800.0
+Inaccurate G! Segment= 85  Step= 4.547473508864641e-13  Deriv= -9675.28125  Finite= 268435456.0
+Inaccurate G! Segment= 53  Step= 9.094947017729282e-13  Deriv= -18934.296875  Finite= 838860800.0
+Inaccurate G! Segment= 75  Step= 4.547473508864641e-13  Deriv= -11622.96875  Finite= 201326592.0
+Inaccurate G! Segment= 6  Step= 4.547473508864641e-13  Deriv= -41.69573974609375  Finite= 402653184.0
+Inaccurate G! Segment= 60  Step= 4.547473508864641e-13  Deriv= -1294.30859375  Finite= 671088640.0
+Inaccurate G! Segment= 22  Step= 4.547473508864641e-13  Deriv= -7403.87890625  Finite= 536870912.0
+Inaccurate G! Segment= 41  Step= 9.094947017729282e-13  Deriv= -67.25384521484375  Finite= 67108864.0
+Inaccurate G! Segment= 90  Step= 4.547473508864641e-13  Deriv= -230.51220703125  Finite= 469762048.0
+Inaccurate G! Segment= 83  Step= 9.094947017729282e-13  Deriv= -45852.2109375  Finite= 369098752.0
+Inaccurate G! Segment= 95  Step= 9.094947017729282e-13  Deriv= -6314.92578125  Finite= 100663296.0
+Inaccurate G! Segment= 74  Step= 9.094947017729282e-13  Deriv= -36685.2265625  Finite= 1375731712.0
+Inaccurate G! Segment= 92  Step= 4.547473508864641e-13  Deriv= -2602.9921875  Finite= 1879048192.0
+Inaccurate G! Segment= 78  Step= 4.547473508864641e-13  Deriv= -56.678741455078125  Finite= 1610612736.0
+Inaccurate G! Segment= 69  Step= 4.547473508864641e-13  Deriv= -26322.69140625  Finite= 134217728.0
+Inaccurate G! Segment= 81  Step= 9.094947017729282e-13  Deriv= -6846.5625  Finite= 469762048.0
+Inaccurate G! Segment= 4  Step= 9.094947017729282e-13  Deriv= -22454.87890625  Finite= 671088640.0
+Inaccurate G! Segment= 24  Step= 4.547473508864641e-13  Deriv= -8508.515625  Finite= 201326592.0
+Inaccurate G! Segment= 12  Step= 4.547473508864641e-13  Deriv= -236.818359375  Finite= 1006632960.0
+Inaccurate G! Segment= 99  Step= 4.547473508864641e-13  Deriv= -58805.046875  Finite= 1677721600.0
+Inaccurate G! Segment= 17  Step= 9.094947017729282e-13  Deriv= -1143.93896484375  Finite= 301989888.0
+Inaccurate G! Segment= 16  Step= 9.094947017729282e-13  Deriv= -211.37481689453125  Finite= 603979776.0
+Inaccurate G! Segment= 76  Step= 9.094947017729282e-13  Deriv= -23837.11328125  Finite= 939524096.0
+Inaccurate G! Segment= 40  Step= 4.547473508864641e-13  Deriv= -41173.890625  Finite= 5570035712.0
+Inaccurate G! Segment= 59  Step= 4.547473508864641e-13  Deriv= -2130.6728515625  Finite= 2013265920.0
+Inaccurate G! Segment= 66  Step= 9.094947017729282e-13  Deriv= -10906.041015625  Finite= 838860800.0
+Inaccurate G! Segment= 23  Step= 4.547473508864641e-13  Deriv= -257.856201171875  Finite= 134217728.0
+{"engine": "tmol", "relax_mode": "torsion", "dataset_id": "5yzf", "device": "cuda", "batch_size": 100, "status": "ok", "error": null, "elapsed_seconds": 63.72582093020901, "initial_score_mean": -72.00611877441406, "validation_score_mean": -337.63604736328125}

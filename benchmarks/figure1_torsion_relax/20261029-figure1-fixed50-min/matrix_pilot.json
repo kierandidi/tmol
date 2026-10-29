@@ -1,0 +1,58 @@
+{
+ "gpu": [
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "5uoi",
+   "threads": 1,
+   "mode": "torsion"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "5uoi",
+   "threads": 1,
+   "mode": "torsion"
+  }
+ ],
+ "gpu_cart": [
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 1,
+   "dataset": "5uoi",
+   "threads": 1,
+   "mode": "cartesian"
+  },
+  {
+   "engine": "tmol",
+   "device": "cuda",
+   "batch": 10,
+   "dataset": "5uoi",
+   "threads": 1,
+   "mode": "cartesian"
+  }
+ ],
+ "pyro": [
+  {
+   "engine": "pyrosetta",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "5uoi",
+   "threads": 1,
+   "mode": "torsion"
+  }
+ ],
+ "pyro_cart": [
+  {
+   "engine": "pyrosetta",
+   "device": "cpu",
+   "batch": 1,
+   "dataset": "5uoi",
+   "threads": 1,
+   "mode": "cartesian"
+  }
+ ]
+}

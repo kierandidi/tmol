@@ -1,0 +1,43 @@
+{
+  "engine": "tmol",
+  "protocol": "fastrelax",
+  "relax_mode": "cartesian",
+  "dataset_id": "hivrt",
+  "modality": "protein_ligand",
+  "device": "cuda",
+  "min_steps": 50,
+  "batch_size": 1000,
+  "atoms": 15782,
+  "residues": 954,
+  "input_path": "/mnt/home/kdidi/tmol-paper-benchmark/runs/20261029-figure1-fixed50-min/data/hivrt_complex.pdb",
+  "input_sha256": "46f9c593147ed37de2fba9de54632c7ba18faf277ea4469dff01ff5c4318bf6e",
+  "cpu_threads_requested": 1,
+  "seed": 20260906,
+  "num_repeats": 1,
+  "timed_samples": 1,
+  "engine_version": "0.2.0",
+  "engine_commit": "uw-ipd/tmol v0.2.0 (release wheel; master 60b0d77df is v0.2.0+10 docs commits)",
+  "machine": {
+    "hostname": "slurm-h200-244-139",
+    "platform": "Linux-6.8.12-680-6063-coreweave-amd64-f81899c8-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "cpu_model": "INTEL(R) XEON(R) PLATINUM 8562Y+",
+    "gpu": "NVIDIA H200, GPU-f4b760ce-6447-9ee8-7530-e6ba9ec40a14, 595.71.05",
+    "slurm_job_id": "773319",
+    "slurm_cpus_per_task": "4",
+    "cuda_visible_devices": "0"
+  },
+  "cpu_affinity": [
+    48,
+    49,
+    112,
+    113
+  ],
+  "source_harness": "/home/kdidi/tmol-paper-benchmark/runs/20261029-figure1-fixed50-min/src",
+  "status": "failed",
+  "started_utc": "2026-10-29T18:32:49Z",
+  "error": "ValueError: Declared polymer bond crosses a geometry gap between residue indices 537 and 538 (cutoff 2.4 Angstrom). Correct the supplied connectivity/coordinates, or set missing_density_distance_threshold=0 to retain the declared topology.",
+  "traceback": "Traceback (most recent call last):\n  File \"/mnt/home/kdidi/tmol-paper-benchmark/runs/20261029-figure1-fixed50-min/src/torsion_fastrelax.py\", line 244, in <module>\n    result.update(tmol_fastrelax(row, args.device, args.batch, args.threads,\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/mnt/home/kdidi/tmol-paper-benchmark/runs/20261029-figure1-fixed50-min/src/torsion_fastrelax.py\", line 102, in tmol_fastrelax\n    pose, database = replicated_pose_020(row, device, batch_size)\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/mnt/home/kdidi/tmol-paper-benchmark/runs/20261029-figure1-fixed50-min/src/torsion_fastrelax.py\", line 55, in replicated_pose_020\n    pose, context = pose_stack_from_atom_array(\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/local/lib/python3.12/dist-packages/decorator/__init__.py\", line 247, in fun\n    return caller(func, *(extras + args), **kw)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/mnt/home/kdidi/tmol-paper-benchmark/runs/20261029-figure1-fixed50-min/env/lib/python3.12/site-packages/tmol/types/_functional.py\", line 28, in validate_f\n    retval = f(*args, **kwargs)\n             ^^^^^^^^^^^^^^^^^^\n  File \"/mnt/home/kdidi/tmol-paper-benchmark/runs/20261029-figure1-fixed50-min/env/lib/python3.12/site-packages/tmol/io/_pose_stack_from_biotite.py\", line 807, in pose_stack_from_atom_array\n    cf = canonical_form_from_biotite(\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/mnt/home/kdidi/tmol-paper-benchmark/runs/20261029-figure1-fixed50-min/env/lib/python3.12/site-packages/tmol/io/_pose_stack_from_biotite.py\", line 2814, in canonical_form_from_biotite\n    covalent_bonds_np = _break_polymer_gaps(\n                        ^^^^^^^^^^^^^^^^^^^^\n  File \"/mnt/home/kdidi/tmol-paper-benchmark/runs/20261029-figure1-fixed50-min/env/lib/python3.12/site-packages/tmol/io/_pose_stack_from_biotite.py\", line 2072, in _break_polymer_gaps\n    raise ValueError(\nValueError: Declared polymer bond crosses a geometry gap between residue indices 537 and 538 (cutoff 2.4 Angstrom). Correct the supplied connectivity/coordinates, or set missing_density_distance_threshold=0 to retain the declared topology.\n",
+  "elapsed_seconds": 11.428468139842153,
+  "finished_utc": "2026-10-29T18:33:00Z"
+}

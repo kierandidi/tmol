@@ -1,0 +1,68 @@
+{
+  "engine": "tmol",
+  "protocol": "fastrelax",
+  "relax_mode": "torsion",
+  "dataset_id": "4lup",
+  "modality": "protein_nucleic",
+  "device": "cuda",
+  "min_steps": 50,
+  "batch_size": 1,
+  "atoms": 3420,
+  "residues": 197,
+  "input_path": "/mnt/home/kdidi/tmol-paper-benchmark/data/rcsb/clean/4lup.pdb",
+  "input_sha256": "776ea6ecac8752ccb48ad6c2fec47b788e200445b0e7ecd1242ce247a47b540a",
+  "cpu_threads_requested": 1,
+  "seed": 20260906,
+  "num_repeats": 1,
+  "timed_samples": 1,
+  "engine_version": "0.2.0",
+  "engine_commit": "uw-ipd/tmol v0.2.0 (release wheel; master 60b0d77df is v0.2.0+10 docs commits)",
+  "machine": {
+    "hostname": "slurm-h200-238-001",
+    "platform": "Linux-6.8.12-680-6063-coreweave-amd64-f81899c8-x86_64-with-glibc2.39",
+    "python": "3.12.3",
+    "cpu_model": "INTEL(R) XEON(R) PLATINUM 8562Y+",
+    "gpu": "NVIDIA H200, GPU-455a267f-81ed-bfba-18a1-a33e47b2b849, 595.71.05",
+    "slurm_job_id": "773086",
+    "slurm_cpus_per_task": "4",
+    "cuda_visible_devices": "0"
+  },
+  "cpu_affinity": [
+    11,
+    12,
+    75,
+    76
+  ],
+  "source_harness": "/home/kdidi/tmol-paper-benchmark/runs/20261029-figure1-fixed50-min/src",
+  "status": "ok",
+  "started_utc": "2026-10-29T18:24:53Z",
+  "seconds_per_batch_samples": [
+    5.937935495749116
+  ],
+  "seconds_per_structure_samples": [
+    5.937935495749116
+  ],
+  "iterations_per_sample": 1,
+  "setup_seconds": 9.210868459194899,
+  "score_terms": {},
+  "peak_memory_bytes": 239551488,
+  "tmol_import_version": "0.2.0",
+  "torch_version": "2.13.0+cu132",
+  "torch_cuda_version": "13.2",
+  "torch_num_threads": 1,
+  "gpu_properties": {
+    "name": "NVIDIA H200",
+    "total_memory": 150111977472,
+    "compute_capability": "9.0"
+  },
+  "validation_score_mean": -630.7901611328125,
+  "validation_score_min": -630.7901611328125,
+  "validation_score_max": -630.7901611328125,
+  "initial_score_mean": 331.93603515625,
+  "final_scores_first10": [
+    -630.7901611328125
+  ],
+  "kinematic_cuda_graph": true,
+  "elapsed_seconds": 22.512091770768166,
+  "finished_utc": "2026-10-29T18:25:15Z"
+}
