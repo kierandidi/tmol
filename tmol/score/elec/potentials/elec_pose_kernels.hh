@@ -44,17 +44,17 @@ struct ElecPoseEvaluator {
 };
 
 template <
+    typename launch_t,
     template <tmol::Device> class Ops,
     tmol::Device D,
     typename Real,
     typename Int>
-void elec_pose_forward_native(
+void elec_pose_forward_launch(
     ContextManager& mgr,
     ElecCtx<Real, Int, D> ctx,
     TView<Int, 1, D> neighbors,
     int n_poses,
     bool compute_derivs) {
-  LAUNCH_BOX_32_OCC(32);
   bool const implicit_self = ctx.max_n_blocks == 1 && neighbors.size(0) == 0;
   if (implicit_self) ctx.use_shared_compact_block_neighbors = true;
   ElecPoseEvaluator<0, Ops, D, Real, Int, launch_t> energy{ctx};
@@ -104,6 +104,32 @@ void elec_pose_forward_native(
     Ops<D>::template foreach_pose_workgroup<launch_t>(
         mgr, n_poses, ctx.max_n_upper_triangle_inds, energy);
   }
+}
+
+template <
+    template <tmol::Device> class Ops,
+    tmol::Device D,
+    typename Real,
+    typename Int>
+void elec_pose_forward_native(
+    ContextManager& mgr,
+    ElecCtx<Real, Int, D> ctx,
+    TView<Int, 1, D> neighbors,
+    int n_poses,
+    bool compute_derivs) {
+  if constexpr (D == tmol::Device::CUDA) {
+    if (!ctx.output_block_pair_energies && neighbors.size(0) > 1025) {
+      // A wider workgroup gives a dense multi-block layout more active warps
+      // without reloading each residue pair's topology in separate shards.
+      LAUNCH_BOX_128;
+      elec_pose_forward_launch<launch_t, Ops, D, Real, Int>(
+          mgr, ctx, neighbors, n_poses, compute_derivs);
+      return;
+    }
+  }
+  LAUNCH_BOX_32_OCC(32);
+  elec_pose_forward_launch<launch_t, Ops, D, Real, Int>(
+      mgr, ctx, neighbors, n_poses, compute_derivs);
 }
 
 template <
