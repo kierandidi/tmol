@@ -33,7 +33,6 @@
 #include <tmol/utility/portable/device.hh>
 #include <tmol/utility/portable/metal_view.hh>
 
-
 namespace tmol {
 namespace score {
 namespace elec {
@@ -75,7 +74,7 @@ using tmol::portable::Vec;
       int atom_tile_ind2,                                               \
       TMOL_THREAD ElecScoringData<Real> const& inter_dat)               \
       ->tmol::portable::array<Real, 1> {                                \
-    int separation = interres_count_pair_separation<elec_tile_size>(         \
+    int separation = interres_count_pair_separation<elec_tile_size>(    \
         inter_dat,                                                      \
         atom_tile_ind1,                                                 \
         atom_tile_ind2,                                                 \
@@ -135,25 +134,31 @@ using tmol::portable::Vec;
         lane);                                      \
   }
 
-#define LOAD_BLOCK_INTO_SHARED                                                \
-  TMOL_DEVICE_FUNC(                                                           \
-      int pose_ind,                                                           \
-      TMOL_THREAD ElecSingleResData<Real>& r_dat,                             \
-      int n_atoms_to_load,                                                    \
-      int start_atom,                                                         \
-      bool count_pair_striking_dist,                                          \
-      TMOL_SHARED_PTR(int) conn_ats) {                              \
-    elec_load_block_into_shared<DeviceDispatch, D, nt, elec_tile_size, Real, Int>( \
-        ctx.rot_coords,                                                       \
-        ctx.block_type_partial_charge,                                        \
-        ctx.block_type_inter_repr_path_distance,                              \
-        pose_ind,                                                             \
-        r_dat,                                                                \
-        n_atoms_to_load,                                                      \
-        start_atom,                                                           \
-        count_pair_striking_dist,                                             \
-        conn_ats,                                                             \
-        lane);                                                                \
+#define LOAD_BLOCK_INTO_SHARED                    \
+  TMOL_DEVICE_FUNC(                               \
+      int pose_ind,                               \
+      TMOL_THREAD ElecSingleResData<Real>& r_dat, \
+      int n_atoms_to_load,                        \
+      int start_atom,                             \
+      bool count_pair_striking_dist,              \
+      TMOL_SHARED_PTR(int) conn_ats) {            \
+    elec_load_block_into_shared<                  \
+        DeviceDispatch,                           \
+        D,                                        \
+        nt,                                       \
+        elec_tile_size,                           \
+        Real,                                     \
+        Int>(                                     \
+        ctx.rot_coords,                           \
+        ctx.block_type_partial_charge,            \
+        ctx.block_type_inter_repr_path_distance,  \
+        pose_ind,                                 \
+        r_dat,                                    \
+        n_atoms_to_load,                          \
+        start_atom,                               \
+        count_pair_striking_dist,                 \
+        conn_ats,                                 \
+        lane);                                    \
   }
 
 #define LOAD_TILE_INVARIANT_INTERRES_DATA                                     \
@@ -202,8 +207,8 @@ using tmol::portable::Vec;
         DeviceDispatch,                             \
         D,                                          \
         nt,                                         \
-        elec_tile_size,                                  \
-        elec_max_n_conn,                                 \
+        elec_tile_size,                             \
+        elec_max_n_conn,                            \
         Real,                                       \
         Int>(                                       \
         ctx.rot_coords,                             \
@@ -228,8 +233,8 @@ using tmol::portable::Vec;
         DeviceDispatch,                             \
         D,                                          \
         nt,                                         \
-        elec_tile_size,                                  \
-        elec_max_n_conn,                                 \
+        elec_tile_size,                             \
+        elec_max_n_conn,                            \
         Real,                                       \
         Int>(                                       \
         ctx.rot_coords,                             \
@@ -260,17 +265,18 @@ using tmol::portable::Vec;
           ElecScoringData,                                       \
           AllAtomPairSelector,                                   \
           D,                                                     \
-          elec_tile_size,                                             \
+          elec_tile_size,                                        \
           nt,                                                    \
           1,                                                     \
           Real,                                                  \
           Int>::                                                 \
           eval_interres_atom_pair(                               \
-              tid,                                               \
+              tid + pair_shard * nt,                             \
               start_atom1,                                       \
               start_atom2,                                       \
               score_inter_elec_atom_pair,                        \
-              inter_dat);                                        \
+              inter_dat,                                         \
+              nt * pair_shards);                                 \
       inter_dat.total_elec += tmol::portable::get<0>(elecE);     \
     });                                                          \
     DeviceDispatch<D>::template for_each_in_workgroup<nt>(       \
@@ -360,8 +366,8 @@ using tmol::portable::Vec;
         DeviceDispatch,                             \
         D,                                          \
         nt,                                         \
-        elec_tile_size,                                  \
-        elec_max_n_conn,                                 \
+        elec_tile_size,                             \
+        elec_max_n_conn,                            \
         Real>(                                      \
         ctx.rot_coords,                             \
         ctx.block_type_partial_charge,              \
@@ -384,8 +390,8 @@ using tmol::portable::Vec;
         DeviceDispatch,                             \
         D,                                          \
         nt,                                         \
-        elec_tile_size,                                  \
-        elec_max_n_conn,                                 \
+        elec_tile_size,                             \
+        elec_max_n_conn,                            \
         Real>(                                      \
         ctx.rot_coords,                             \
         ctx.block_type_partial_charge,              \
@@ -417,17 +423,18 @@ using tmol::portable::Vec;
           ElecScoringData,                                       \
           AllAtomPairSelector,                                   \
           D,                                                     \
-          elec_tile_size,                                             \
+          elec_tile_size,                                        \
           nt,                                                    \
           1,                                                     \
           Real,                                                  \
           Int>::                                                 \
           eval_intrares_atom_pairs(                              \
-              tid,                                               \
+              tid + pair_shard * nt,                             \
               start_atom1,                                       \
               start_atom2,                                       \
               score_intra_elec_atom_pair,                        \
-              intra_dat);                                        \
+              intra_dat,                                         \
+              nt * pair_shards);                                 \
       intra_dat.total_elec += tmol::portable::get<0>(elecE);     \
     });                                                          \
     DeviceDispatch<D>::template for_each_in_workgroup<nt>(       \
@@ -451,9 +458,12 @@ TMOL_HOST_DEVICE_FUNC void elec_eval_energies_by_block_2(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,
-    WorkgroupLane<D> lane = {}) {
+    WorkgroupLane<D> lane = {},
+    int pair_shard = 0,
+    int pair_shards = 1) {
   CTA_LAUNCH_T_PARAMS;
-  typedef ElecSharedMem<Real, elec_tile_size, elec_max_n_conn, launch_t> shared_mem_union;
+  typedef ElecSharedMem<Real, elec_tile_size, elec_max_n_conn, launch_t>
+      shared_mem_union;
   auto elec_atom_energy_and_derivs =
       ([=] TMOL_DEVICE_FUNC(
            int atom_tile_ind1,
@@ -593,9 +603,12 @@ TMOL_HOST_DEVICE_FUNC void elec_eval_energies(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,
-    WorkgroupLane<D> lane = {}) {
+    WorkgroupLane<D> lane = {},
+    int pair_shard = 0,
+    int pair_shards = 1) {
   CTA_LAUNCH_T_PARAMS;
-  typedef ElecSharedMem<Real, elec_tile_size, elec_max_n_conn, launch_t> shared_mem_union;
+  typedef ElecSharedMem<Real, elec_tile_size, elec_max_n_conn, launch_t>
+      shared_mem_union;
   auto elec_atom_energy_and_derivs =
       ([=] TMOL_DEVICE_FUNC(
            int atom_tile_ind1,
@@ -740,9 +753,12 @@ TMOL_HOST_DEVICE_FUNC void elec_eval_derivs_2(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,
-    WorkgroupLane<D> lane = {}) {
+    WorkgroupLane<D> lane = {},
+    int pair_shard = 0,
+    int pair_shards = 1) {
   CTA_LAUNCH_T_PARAMS;
-  typedef ElecSharedMem<Real, elec_tile_size, elec_max_n_conn, launch_t> shared_mem_union;
+  typedef ElecSharedMem<Real, elec_tile_size, elec_max_n_conn, launch_t>
+      shared_mem_union;
   auto elec_atom_energy_and_derivs =
       ([=] TMOL_DEVICE_FUNC(
            int atom_tile_ind1,
@@ -883,9 +899,12 @@ TMOL_HOST_DEVICE_FUNC void elec_eval_energies_by_block(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,
-    WorkgroupLane<D> lane = {}) {
+    WorkgroupLane<D> lane = {},
+    int pair_shard = 0,
+    int pair_shards = 1) {
   CTA_LAUNCH_T_PARAMS;
-  typedef ElecSharedMem<Real, elec_tile_size, elec_max_n_conn, launch_t> shared_mem_union;
+  typedef ElecSharedMem<Real, elec_tile_size, elec_max_n_conn, launch_t>
+      shared_mem_union;
   auto elec_atom_energy_and_derivs =
       ([=] TMOL_DEVICE_FUNC(
            int atom_tile_ind1,
@@ -1004,9 +1023,12 @@ TMOL_HOST_DEVICE_FUNC void elec_eval_derivs(
     TMOL_THREAD Ctx const& ctx,
     TMOL_SHARED_REF(Shared) shared,
     int cta,
-    WorkgroupLane<D> lane = {}) {
+    WorkgroupLane<D> lane = {},
+    int pair_shard = 0,
+    int pair_shards = 1) {
   CTA_LAUNCH_T_PARAMS;
-  typedef ElecSharedMem<Real, elec_tile_size, elec_max_n_conn, launch_t> shared_mem_union;
+  typedef ElecSharedMem<Real, elec_tile_size, elec_max_n_conn, launch_t>
+      shared_mem_union;
   auto elec_atom_energy_and_derivs =
       ([=] TMOL_DEVICE_FUNC(
            int atom_tile_ind1,
