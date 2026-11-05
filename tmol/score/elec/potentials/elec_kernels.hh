@@ -446,6 +446,195 @@ using tmol::portable::Vec;
 // same code CPU and CUDA run. State arrives through ElecCtx instead of an
 // implicit [=] capture, and shared memory is a parameter because Metal permits
 // `threadgroup` declarations only at kernel scope.
+// Whole-pose energy, full coordinate derivatives, weighted backward and
+// rotamer execution share one topology/tile/atom traversal.
+enum class ElecMode { Energy, EnergyAndDerivatives, Backward };
+
+template <
+    ElecMode Mode,
+    bool Rotamer,
+    template <tmol::Device> class DeviceDispatch,
+    tmol::Device D,
+    typename Real,
+    typename Int,
+    typename launch_t,
+    typename Ctx,
+    typename Shared>
+TMOL_HOST_DEVICE_FUNC void elec_evaluate_pair(
+    TMOL_THREAD Ctx const& ctx,
+    TMOL_SHARED_REF(Shared) shared,
+    int cta,
+    WorkgroupLane<D> lane = {},
+    int pair_shard = 0,
+    int pair_shards = 1) {
+  CTA_LAUNCH_T_PARAMS;
+  typedef ElecSharedMem<Real, elec_tile_size, elec_max_n_conn, launch_t>
+      shared_mem_union;
+  int const max_important_bond_separation = 4;
+  int pose_ind, block_ind1, block_ind2, rot_ind1, rot_ind2;
+  if constexpr (Rotamer) {
+    pose_ind = ctx.dispatch_indices[0][cta];
+    rot_ind1 = ctx.dispatch_indices[1][cta];
+    rot_ind2 = ctx.dispatch_indices[2][cta];
+    if (rot_ind1 < 0 || rot_ind2 < 0) return;
+    block_ind1 = ctx.block_ind_for_rot[rot_ind1];
+    block_ind2 = ctx.block_ind_for_rot[rot_ind2];
+  } else {
+    pose_ind = cta / ctx.max_n_upper_triangle_inds;
+    auto pair = common::upper_triangle_inds_from_linear_index(
+        cta % ctx.max_n_upper_triangle_inds, ctx.max_n_blocks + 1);
+    block_ind1 = common::get<0>(pair);
+    block_ind2 = common::get<1>(pair) - 1;
+    if constexpr (Mode == ElecMode::Backward) {
+      if (ctx.scratch_rot_neighbors[pose_ind][block_ind1][block_ind2] == 0
+          || ctx.dTdV[0][pose_ind][block_ind1][block_ind2] == 0)
+        return;
+    } else {
+      if (!ctx.use_shared_compact_block_neighbors
+          && ctx.scratch_rot_neighbors[pose_ind][block_ind1][block_ind2] == 0)
+        return;
+    }
+    rot_ind1 = ctx.rot_offset_for_block[pose_ind][block_ind1];
+    rot_ind2 = ctx.rot_offset_for_block[pose_ind][block_ind2];
+    if (rot_ind1 < 0 || rot_ind2 < 0) return;
+  }
+  int const block_type1 = ctx.block_type_ind_for_rot[rot_ind1];
+  int const block_type2 = ctx.block_type_ind_for_rot[rot_ind2];
+  if (block_type1 < 0 || block_type2 < 0) return;
+  int const n_atoms1 = ctx.block_type_n_atoms[block_type1];
+  int const n_atoms2 = ctx.block_type_n_atoms[block_type2];
+
+  // Capture only the derivative view and this workgroup's weight in the
+  // frequently copied atom-pair closure, not the full launch context.
+  auto const coordinate_derivatives = ctx.dV_dcoords;
+  Real weight = 0;
+  if constexpr (Mode == ElecMode::Backward) {
+    if constexpr (Rotamer)
+      weight = ctx.dTdV[0][cta];
+    else
+      weight = ctx.dTdV[0][pose_ind][block_ind1][block_ind2];
+  }
+  auto elec_atom_energy_and_derivs =
+      ([=] TMOL_DEVICE_FUNC(
+           int atom_tile_ind1,
+           int atom_tile_ind2,
+           int start_atom1,
+           int start_atom2,
+           TMOL_THREAD ElecScoringData<Real> const& score_dat,
+           int cp_separation) {
+        (void)coordinate_derivatives;
+        (void)weight;
+        if constexpr (Mode == ElecMode::Backward) {
+          elec_atom_derivs<Real, D>(
+              atom_tile_ind1,
+              atom_tile_ind2,
+              start_atom1,
+              start_atom2,
+              score_dat,
+              cp_separation,
+              weight,
+              coordinate_derivatives);
+          return Real(0);
+        } else if constexpr (Mode == ElecMode::EnergyAndDerivatives) {
+          return elec_atom_energy_and_derivs_full<Real, D>(
+              atom_tile_ind1,
+              atom_tile_ind2,
+              start_atom1,
+              start_atom2,
+              score_dat,
+              cp_separation,
+              coordinate_derivatives);
+        } else {
+          return elec_atom_energy(
+              atom_tile_ind1, atom_tile_ind2, score_dat, cp_separation);
+        }
+      });
+  auto score_inter_elec_atom_pair = ([=] SCORE_INTER_ELEC_ATOM_PAIR);
+
+  auto score_intra_elec_atom_pair = ([=] SCORE_INTRA_ELEC_ATOM_PAIR);
+
+  auto load_block_coords_and_params_into_shared =
+      ([=] LOAD_BLOCK_COORDS_AND_PARAMS_INTO_SHARED);
+
+  auto load_block_into_shared = ([=] LOAD_BLOCK_INTO_SHARED);
+
+  auto load_tile_invariant_interres_data =
+      ([=] LOAD_TILE_INVARIANT_INTERRES_DATA);
+
+  auto load_interres1_tile_data_to_shared =
+      ([=] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
+
+  auto load_interres2_tile_data_to_shared =
+      ([=] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
+
+  auto load_interres_data_from_shared = ([=] LOAD_INTERRES_DATA_FROM_SHARED);
+
+  auto eval_interres_atom_pair_scores = ([=] EVAL_INTERRES_ATOM_PAIR_SCORES);
+
+  auto store_calculated_energies =
+      ([=] TMOL_DEVICE_FUNC(
+           TMOL_THREAD ElecScoringData<Real>& score_dat,
+           TMOL_SHARED_REF(shared_mem_union) storage) {
+        (void)ctx;
+        (void)cta;
+        (void)
+            lane;  // Keep captures visible to NVCC outside constexpr branches.
+        if constexpr (Mode != ElecMode::Backward) {
+          if constexpr (Rotamer) {
+            auto store = ([=] STORE_CALCULATED_ROTAMER_ENERGIES);
+            store(score_dat, storage);
+          } else {
+            auto store = ([=] STORE_CALCULATED_POSE_ENERGIES);
+            store(score_dat, storage);
+          }
+        }
+      });
+
+  auto load_tile_invariant_intrares_data =
+      ([=] LOAD_TILE_INVARIANT_INTRARES_DATA);
+
+  auto load_intrares1_tile_data_to_shared =
+      ([=] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
+
+  auto load_intrares2_tile_data_to_shared =
+      ([=] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
+
+  auto load_intrares_data_from_shared = ([=] LOAD_INTRARES_DATA_FROM_SHARED);
+
+  auto eval_intrares_atom_pair_scores = ([=] EVAL_INTRARES_ATOM_PAIR_SCORES);
+
+  tmol::score::common::tile_evaluate_rot_pair<
+      DeviceDispatch,
+      D,
+      ElecScoringData<Real>,
+      ElecScoringData<Real>,
+      Real,
+      elec_tile_size>(
+      shared,
+      pose_ind,
+      rot_ind1,
+      rot_ind2,
+      block_ind1,
+      block_ind2,
+      block_type1,
+      block_type2,
+      n_atoms1,
+      n_atoms2,
+      load_tile_invariant_interres_data,
+      load_interres1_tile_data_to_shared,
+      load_interres2_tile_data_to_shared,
+      load_interres_data_from_shared,
+      eval_interres_atom_pair_scores,
+      store_calculated_energies,
+      load_tile_invariant_intrares_data,
+      load_intrares1_tile_data_to_shared,
+      load_intrares2_tile_data_to_shared,
+      load_intrares_data_from_shared,
+      eval_intrares_atom_pair_scores,
+      store_calculated_energies,
+      lane);
+}
+
 template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
@@ -461,136 +650,16 @@ TMOL_HOST_DEVICE_FUNC void elec_eval_energies_by_block_2(
     WorkgroupLane<D> lane = {},
     int pair_shard = 0,
     int pair_shards = 1) {
-  CTA_LAUNCH_T_PARAMS;
-  typedef ElecSharedMem<Real, elec_tile_size, elec_max_n_conn, launch_t>
-      shared_mem_union;
-  auto elec_atom_energy_and_derivs =
-      ([=] TMOL_DEVICE_FUNC(
-           int atom_tile_ind1,
-           int atom_tile_ind2,
-           int,
-           int,
-           TMOL_THREAD ElecScoringData<Real> const& score_dat,
-           int cp_separation) {
-        return elec_atom_energy(
-            atom_tile_ind1, atom_tile_ind2, score_dat, cp_separation);
-      });
-
-  auto score_inter_elec_atom_pair = ([=] SCORE_INTER_ELEC_ATOM_PAIR);
-
-  auto score_intra_elec_atom_pair = ([=] SCORE_INTRA_ELEC_ATOM_PAIR);
-
-  auto load_block_coords_and_params_into_shared =
-      ([=] LOAD_BLOCK_COORDS_AND_PARAMS_INTO_SHARED);
-
-  auto load_block_into_shared = ([=] LOAD_BLOCK_INTO_SHARED);
-
-  int const max_important_bond_separation = 4;
-
-  int const pose_ind = cta / (ctx.max_n_upper_triangle_inds);
-  int const block_ind_pair = cta % (ctx.max_n_upper_triangle_inds);
-
-  auto upper_triangle_ind = common::upper_triangle_inds_from_linear_index(
-      block_ind_pair, ctx.max_n_blocks + 1);
-  int const block_ind1 = common::get<0>(upper_triangle_ind);
-  int const block_ind2 = common::get<1>(upper_triangle_ind) - 1;
-
-  // We do not have to kill half of our thread blocks simply because they
-  // represent the lower triangle now that we're using upper-triangle indices,
-  // So no need for this check:
-  // if (block_ind1 > block_ind2) {
-  //   return;
-  // }
-
-  // But we still kill everything that involves non-neighboring blocks
-  // and that can be a lot!
-  if (!ctx.use_shared_compact_block_neighbors
-      && ctx.scratch_rot_neighbors[pose_ind][block_ind1][block_ind2] == 0) {
-    return;
-  }
-
-  int const rot_ind1 = ctx.rot_offset_for_block[pose_ind][block_ind1];
-  int const rot_ind2 = ctx.rot_offset_for_block[pose_ind][block_ind2];
-
-  if (rot_ind1 < 0 || rot_ind2 < 0) {
-    return;
-  }
-
-  int const block_type1 = ctx.block_type_ind_for_rot[rot_ind1];
-  int const block_type2 = ctx.block_type_ind_for_rot[rot_ind2];
-
-  if (block_type1 < 0 || block_type2 < 0) {
-    // I think this cannot happen
-    return;
-  }
-  int const n_atoms1 = ctx.block_type_n_atoms[block_type1];
-  int const n_atoms2 = ctx.block_type_n_atoms[block_type2];
-
-  auto load_tile_invariant_interres_data =
-      ([=] LOAD_TILE_INVARIANT_INTERRES_DATA);
-
-  auto load_interres1_tile_data_to_shared =
-      ([=] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
-
-  auto load_interres2_tile_data_to_shared =
-      ([=] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
-
-  auto load_interres_data_from_shared = ([=] LOAD_INTERRES_DATA_FROM_SHARED);
-
-  auto eval_interres_atom_pair_scores = ([=] EVAL_INTERRES_ATOM_PAIR_SCORES);
-
-  auto store_calculated_energies = ([=] STORE_CALCULATED_POSE_ENERGIES);
-
-  auto load_tile_invariant_intrares_data =
-      ([=] LOAD_TILE_INVARIANT_INTRARES_DATA);
-
-  auto load_intrares1_tile_data_to_shared =
-      ([=] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
-
-  auto load_intrares2_tile_data_to_shared =
-      ([=] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
-
-  auto load_intrares_data_from_shared = ([=] LOAD_INTRARES_DATA_FROM_SHARED);
-
-  auto eval_intrares_atom_pair_scores = ([=] EVAL_INTRARES_ATOM_PAIR_SCORES);
-
-  tmol::score::common::tile_evaluate_rot_pair<
+  elec_evaluate_pair<
+      ElecMode::Energy,
+      false,
       DeviceDispatch,
       D,
-      ElecScoringData<Real>,
-      ElecScoringData<Real>,
       Real,
-      elec_tile_size>(
-      shared,
-      pose_ind,
-      rot_ind1,
-      rot_ind2,
-      block_ind1,
-      block_ind2,
-      block_type1,
-      block_type2,
-      n_atoms1,
-      n_atoms2,
-      load_tile_invariant_interres_data,
-      load_interres1_tile_data_to_shared,
-      load_interres2_tile_data_to_shared,
-      load_interres_data_from_shared,
-      eval_interres_atom_pair_scores,
-      store_calculated_energies,
-      load_tile_invariant_intrares_data,
-      load_intrares1_tile_data_to_shared,
-      load_intrares2_tile_data_to_shared,
-      load_intrares_data_from_shared,
-      eval_intrares_atom_pair_scores,
-      store_calculated_energies,
-      lane);
+      Int,
+      launch_t>(ctx, shared, cta, lane, pair_shard, pair_shards);
 }
 
-// Kernel body, extracted from a device lambda so that a backend whose entry
-// points cannot be closures -- Metal's `kernel void` functions -- can call the
-// same code CPU and CUDA run. State arrives through ElecCtx instead of an
-// implicit [=] capture, and shared memory is a parameter because Metal permits
-// `threadgroup` declarations only at kernel scope.
 template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
@@ -606,141 +675,16 @@ TMOL_HOST_DEVICE_FUNC void elec_eval_energies(
     WorkgroupLane<D> lane = {},
     int pair_shard = 0,
     int pair_shards = 1) {
-  CTA_LAUNCH_T_PARAMS;
-  typedef ElecSharedMem<Real, elec_tile_size, elec_max_n_conn, launch_t>
-      shared_mem_union;
-  auto elec_atom_energy_and_derivs =
-      ([=] TMOL_DEVICE_FUNC(
-           int atom_tile_ind1,
-           int atom_tile_ind2,
-           int start_atom1,
-           int start_atom2,
-           TMOL_THREAD ElecScoringData<Real> const& score_dat,
-           int cp_separation) {
-        return elec_atom_energy_and_derivs_full<Real, D>(
-            atom_tile_ind1,
-            atom_tile_ind2,
-            start_atom1,
-            start_atom2,
-            score_dat,
-            cp_separation,
-            ctx.dV_dcoords);
-      });
-
-  auto score_inter_elec_atom_pair = ([=] SCORE_INTER_ELEC_ATOM_PAIR);
-
-  auto score_intra_elec_atom_pair = ([=] SCORE_INTRA_ELEC_ATOM_PAIR);
-
-  auto load_block_coords_and_params_into_shared =
-      ([=] LOAD_BLOCK_COORDS_AND_PARAMS_INTO_SHARED);
-
-  auto load_block_into_shared = ([=] LOAD_BLOCK_INTO_SHARED);
-
-  int const max_important_bond_separation = 4;
-
-  int const pose_ind = cta / (ctx.max_n_upper_triangle_inds);
-  int const block_ind_pair = cta % (ctx.max_n_upper_triangle_inds);
-
-  auto upper_triangle_ind = common::upper_triangle_inds_from_linear_index(
-      block_ind_pair, ctx.max_n_blocks + 1);
-  int const block_ind1 = common::get<0>(upper_triangle_ind);
-  int const block_ind2 = common::get<1>(upper_triangle_ind) - 1;
-
-  // We do not have to kill half of our thread blocks simply because they
-  // represent the lower triangle now that we're using upper-triangle indices
-  // if (block_ind1 > block_ind2) {
-  //   return;
-  // }
-
-  // But we still kill everything that involves non-neighboring blocks
-  // and that can be a lot!
-  if (!ctx.use_shared_compact_block_neighbors
-      && ctx.scratch_rot_neighbors[pose_ind][block_ind1][block_ind2] == 0) {
-    return;
-  }
-
-  int const rot_ind1 = ctx.rot_offset_for_block[pose_ind][block_ind1];
-  int const rot_ind2 = ctx.rot_offset_for_block[pose_ind][block_ind2];
-
-  if (rot_ind1 < 0 || rot_ind2 < 0) {
-    return;
-  }
-
-  int const block_type1 = ctx.block_type_ind_for_rot[rot_ind1];
-  int const block_type2 = ctx.block_type_ind_for_rot[rot_ind2];
-
-  if (block_type1 < 0 || block_type2 < 0) {
-    // I think this cannot happen
-    return;
-  }
-  int const n_atoms1 = ctx.block_type_n_atoms[block_type1];
-  int const n_atoms2 = ctx.block_type_n_atoms[block_type2];
-
-  auto load_tile_invariant_interres_data =
-      ([=] LOAD_TILE_INVARIANT_INTERRES_DATA);
-
-  auto load_interres1_tile_data_to_shared =
-      ([=] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
-
-  auto load_interres2_tile_data_to_shared =
-      ([=] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
-
-  auto load_interres_data_from_shared = ([=] LOAD_INTERRES_DATA_FROM_SHARED);
-
-  auto eval_interres_atom_pair_scores = ([=] EVAL_INTERRES_ATOM_PAIR_SCORES);
-
-  auto store_calculated_energies = ([=] STORE_CALCULATED_POSE_ENERGIES);
-
-  auto load_tile_invariant_intrares_data =
-      ([=] LOAD_TILE_INVARIANT_INTRARES_DATA);
-
-  auto load_intrares1_tile_data_to_shared =
-      ([=] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
-
-  auto load_intrares2_tile_data_to_shared =
-      ([=] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
-
-  auto load_intrares_data_from_shared = ([=] LOAD_INTRARES_DATA_FROM_SHARED);
-
-  auto eval_intrares_atom_pair_scores = ([=] EVAL_INTRARES_ATOM_PAIR_SCORES);
-
-  tmol::score::common::tile_evaluate_rot_pair<
+  elec_evaluate_pair<
+      ElecMode::EnergyAndDerivatives,
+      false,
       DeviceDispatch,
       D,
-      ElecScoringData<Real>,
-      ElecScoringData<Real>,
       Real,
-      elec_tile_size>(
-      shared,
-      pose_ind,
-      rot_ind1,
-      rot_ind2,
-      block_ind1,
-      block_ind2,
-      block_type1,
-      block_type2,
-      n_atoms1,
-      n_atoms2,
-      load_tile_invariant_interres_data,
-      load_interres1_tile_data_to_shared,
-      load_interres2_tile_data_to_shared,
-      load_interres_data_from_shared,
-      eval_interres_atom_pair_scores,
-      store_calculated_energies,
-      load_tile_invariant_intrares_data,
-      load_intrares1_tile_data_to_shared,
-      load_intrares2_tile_data_to_shared,
-      load_intrares_data_from_shared,
-      eval_intrares_atom_pair_scores,
-      store_calculated_energies,
-      lane);
+      Int,
+      launch_t>(ctx, shared, cta, lane, pair_shard, pair_shards);
 }
 
-// Kernel body, extracted from a device lambda so that a backend whose entry
-// points cannot be closures -- Metal's `kernel void` functions -- can call the
-// same code CPU and CUDA run. State arrives through ElecCtx instead of an
-// implicit [=] capture, and shared memory is a parameter because Metal permits
-// `threadgroup` declarations only at kernel scope.
 template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
@@ -756,137 +700,16 @@ TMOL_HOST_DEVICE_FUNC void elec_eval_derivs_2(
     WorkgroupLane<D> lane = {},
     int pair_shard = 0,
     int pair_shards = 1) {
-  CTA_LAUNCH_T_PARAMS;
-  typedef ElecSharedMem<Real, elec_tile_size, elec_max_n_conn, launch_t>
-      shared_mem_union;
-  auto elec_atom_energy_and_derivs =
-      ([=] TMOL_DEVICE_FUNC(
-           int atom_tile_ind1,
-           int atom_tile_ind2,
-           int start_atom1,
-           int start_atom2,
-           TMOL_THREAD ElecScoringData<Real> const& score_dat,
-           int cp_separation) {
-        elec_atom_derivs<Real, D>(
-            atom_tile_ind1,
-            atom_tile_ind2,
-            start_atom1,
-            start_atom2,
-            score_dat,
-            cp_separation,
-            ctx.dTdV[0][score_dat.pose_ind][score_dat.block_ind1]
-                    [score_dat.block_ind2],
-            ctx.dV_dcoords);
-        return 0.0;
-      });
-  auto score_inter_elec_atom_pair = ([=] SCORE_INTER_ELEC_ATOM_PAIR);
-
-  auto score_intra_elec_atom_pair = ([=] SCORE_INTRA_ELEC_ATOM_PAIR);
-
-  auto load_block_coords_and_params_into_shared =
-      ([=] LOAD_BLOCK_COORDS_AND_PARAMS_INTO_SHARED);
-
-  auto load_block_into_shared = ([=] LOAD_BLOCK_INTO_SHARED);
-
-  int const max_important_bond_separation = 4;
-  int const pose_ind = cta / (ctx.max_n_upper_triangle_inds);
-  int const block_ind_pair = cta % (ctx.max_n_upper_triangle_inds);
-
-  auto upper_triangle_ind = common::upper_triangle_inds_from_linear_index(
-      block_ind_pair, ctx.max_n_blocks + 1);
-  int const block_ind1 = common::get<0>(upper_triangle_ind);
-  int const block_ind2 = common::get<1>(upper_triangle_ind) - 1;
-
-  int const rot_ind1 = ctx.rot_offset_for_block[pose_ind][block_ind1];
-  int const rot_ind2 = ctx.rot_offset_for_block[pose_ind][block_ind2];
-
-  if (ctx.scratch_rot_neighbors[pose_ind][block_ind1][block_ind2] == 0) {
-    return;
-  }
-
-  if (ctx.dTdV[0][pose_ind][block_ind1][block_ind2] == 0) {
-    return;
-  }
-
-  int const block_type1 = ctx.block_type_ind_for_rot[rot_ind1];
-  int const block_type2 = ctx.block_type_ind_for_rot[rot_ind2];
-
-  if (block_type1 < 0 || block_type2 < 0) {
-    return;
-  }
-
-  int const n_atoms1 = ctx.block_type_n_atoms[block_type1];
-  int const n_atoms2 = ctx.block_type_n_atoms[block_type2];
-
-  auto load_tile_invariant_interres_data =
-      ([=] LOAD_TILE_INVARIANT_INTERRES_DATA);
-
-  auto load_interres1_tile_data_to_shared =
-      ([=] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
-
-  auto load_interres2_tile_data_to_shared =
-      ([=] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
-
-  auto load_interres_data_from_shared = ([=] LOAD_INTERRES_DATA_FROM_SHARED);
-
-  auto eval_interres_atom_pair_scores = ([=] EVAL_INTERRES_ATOM_PAIR_SCORES);
-
-  auto store_calculated_energies =
-      ([=](TMOL_THREAD ElecScoringData<Real>& score_dat,
-           TMOL_SHARED_REF(shared_mem_union) shared) {
-        ;  // no op when what we're computing are the gradients ()
-      });
-
-  auto load_tile_invariant_intrares_data =
-      ([=] LOAD_TILE_INVARIANT_INTRARES_DATA);
-
-  auto load_intrares1_tile_data_to_shared =
-      ([=] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
-
-  auto load_intrares2_tile_data_to_shared =
-      ([=] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
-
-  auto load_intrares_data_from_shared = ([=] LOAD_INTRARES_DATA_FROM_SHARED);
-
-  auto eval_intrares_atom_pair_scores = ([=] EVAL_INTRARES_ATOM_PAIR_SCORES);
-
-  tmol::score::common::tile_evaluate_rot_pair<
+  elec_evaluate_pair<
+      ElecMode::Backward,
+      false,
       DeviceDispatch,
       D,
-      ElecScoringData<Real>,
-      ElecScoringData<Real>,
       Real,
-      elec_tile_size>(
-      shared,
-      pose_ind,
-      rot_ind1,
-      rot_ind2,
-      block_ind1,
-      block_ind2,
-      block_type1,
-      block_type2,
-      n_atoms1,
-      n_atoms2,
-      load_tile_invariant_interres_data,
-      load_interres1_tile_data_to_shared,
-      load_interres2_tile_data_to_shared,
-      load_interres_data_from_shared,
-      eval_interres_atom_pair_scores,
-      store_calculated_energies,
-      load_tile_invariant_intrares_data,
-      load_intrares1_tile_data_to_shared,
-      load_intrares2_tile_data_to_shared,
-      load_intrares_data_from_shared,
-      eval_intrares_atom_pair_scores,
-      store_calculated_energies,
-      lane);
+      Int,
+      launch_t>(ctx, shared, cta, lane, pair_shard, pair_shards);
 }
 
-// Kernel body, extracted from a device lambda so that a backend whose entry
-// points cannot be closures -- Metal's `kernel void` functions -- can call the
-// same code CPU and CUDA run. State arrives through ElecCtx instead of an
-// implicit [=] capture, and shared memory is a parameter because Metal permits
-// `threadgroup` declarations only at kernel scope.
 template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
@@ -902,115 +725,16 @@ TMOL_HOST_DEVICE_FUNC void elec_eval_energies_by_block(
     WorkgroupLane<D> lane = {},
     int pair_shard = 0,
     int pair_shards = 1) {
-  CTA_LAUNCH_T_PARAMS;
-  typedef ElecSharedMem<Real, elec_tile_size, elec_max_n_conn, launch_t>
-      shared_mem_union;
-  auto elec_atom_energy_and_derivs =
-      ([=] TMOL_DEVICE_FUNC(
-           int atom_tile_ind1,
-           int atom_tile_ind2,
-           int,
-           int,
-           TMOL_THREAD ElecScoringData<Real> const& score_dat,
-           int cp_separation) {
-        return elec_atom_energy(
-            atom_tile_ind1, atom_tile_ind2, score_dat, cp_separation);
-      });
-
-  auto score_inter_elec_atom_pair = ([=] SCORE_INTER_ELEC_ATOM_PAIR);
-
-  auto score_intra_elec_atom_pair = ([=] SCORE_INTRA_ELEC_ATOM_PAIR);
-
-  auto load_block_coords_and_params_into_shared =
-      ([=] LOAD_BLOCK_COORDS_AND_PARAMS_INTO_SHARED);
-
-  auto load_block_into_shared = ([=] LOAD_BLOCK_INTO_SHARED);
-
-  int const max_important_bond_separation = 4;
-
-  int const pose_ind = ctx.dispatch_indices[0][cta];
-
-  int const rot_ind1 = ctx.dispatch_indices[1][cta];
-  int const rot_ind2 = ctx.dispatch_indices[2][cta];
-
-  int const block_ind1 = ctx.block_ind_for_rot[rot_ind1];
-  int const block_ind2 = ctx.block_ind_for_rot[rot_ind2];
-
-  int const block_type1 = ctx.block_type_ind_for_rot[rot_ind1];
-  int const block_type2 = ctx.block_type_ind_for_rot[rot_ind2];
-
-  if (block_type1 < 0 || block_type2 < 0) {
-    return;
-  }
-
-  int const n_atoms1 = ctx.block_type_n_atoms[block_type1];
-  int const n_atoms2 = ctx.block_type_n_atoms[block_type2];
-
-  auto load_tile_invariant_interres_data =
-      ([=] LOAD_TILE_INVARIANT_INTERRES_DATA);
-
-  auto load_interres1_tile_data_to_shared =
-      ([=] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
-
-  auto load_interres2_tile_data_to_shared =
-      ([=] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
-
-  auto load_interres_data_from_shared = ([=] LOAD_INTERRES_DATA_FROM_SHARED);
-
-  auto eval_interres_atom_pair_scores = ([=] EVAL_INTERRES_ATOM_PAIR_SCORES);
-
-  auto store_calculated_energies = ([=] STORE_CALCULATED_ROTAMER_ENERGIES);
-
-  auto load_tile_invariant_intrares_data =
-      ([=] LOAD_TILE_INVARIANT_INTRARES_DATA);
-
-  auto load_intrares1_tile_data_to_shared =
-      ([=] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
-
-  auto load_intrares2_tile_data_to_shared =
-      ([=] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
-
-  auto load_intrares_data_from_shared = ([=] LOAD_INTRARES_DATA_FROM_SHARED);
-
-  auto eval_intrares_atom_pair_scores = ([=] EVAL_INTRARES_ATOM_PAIR_SCORES);
-
-  tmol::score::common::tile_evaluate_rot_pair<
+  elec_evaluate_pair<
+      ElecMode::Energy,
+      true,
       DeviceDispatch,
       D,
-      ElecScoringData<Real>,
-      ElecScoringData<Real>,
       Real,
-      elec_tile_size>(
-      shared,
-      pose_ind,
-      rot_ind1,
-      rot_ind2,
-      block_ind1,
-      block_ind2,
-      block_type1,
-      block_type2,
-      n_atoms1,
-      n_atoms2,
-      load_tile_invariant_interres_data,
-      load_interres1_tile_data_to_shared,
-      load_interres2_tile_data_to_shared,
-      load_interres_data_from_shared,
-      eval_interres_atom_pair_scores,
-      store_calculated_energies,
-      load_tile_invariant_intrares_data,
-      load_intrares1_tile_data_to_shared,
-      load_intrares2_tile_data_to_shared,
-      load_intrares_data_from_shared,
-      eval_intrares_atom_pair_scores,
-      store_calculated_energies,
-      lane);
+      Int,
+      launch_t>(ctx, shared, cta, lane, pair_shard, pair_shards);
 }
 
-// Kernel body, extracted from a device lambda so that a backend whose entry
-// points cannot be closures -- Metal's `kernel void` functions -- can call the
-// same code CPU and CUDA run. State arrives through ElecCtx instead of an
-// implicit [=] capture, and shared memory is a parameter because Metal permits
-// `threadgroup` declarations only at kernel scope.
 template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
@@ -1026,120 +750,14 @@ TMOL_HOST_DEVICE_FUNC void elec_eval_derivs(
     WorkgroupLane<D> lane = {},
     int pair_shard = 0,
     int pair_shards = 1) {
-  CTA_LAUNCH_T_PARAMS;
-  typedef ElecSharedMem<Real, elec_tile_size, elec_max_n_conn, launch_t>
-      shared_mem_union;
-  auto elec_atom_energy_and_derivs =
-      ([=] TMOL_DEVICE_FUNC(
-           int atom_tile_ind1,
-           int atom_tile_ind2,
-           int start_atom1,
-           int start_atom2,
-           TMOL_THREAD ElecScoringData<Real> const& score_dat,
-           int cp_separation) {
-        elec_atom_derivs<Real, D>(
-            atom_tile_ind1,
-            atom_tile_ind2,
-            start_atom1,
-            start_atom2,
-            score_dat,
-            cp_separation,
-            ctx.dTdV[0][cta],
-            ctx.dV_dcoords);
-        return 0.0;
-      });
-
-  // TEST!
-  auto score_inter_elec_atom_pair = ([=] SCORE_INTER_ELEC_ATOM_PAIR);
-
-  auto score_intra_elec_atom_pair = ([=] SCORE_INTRA_ELEC_ATOM_PAIR);
-
-  auto load_block_coords_and_params_into_shared =
-      ([=] LOAD_BLOCK_COORDS_AND_PARAMS_INTO_SHARED);
-
-  auto load_block_into_shared = ([=] LOAD_BLOCK_INTO_SHARED);
-
-  int const max_important_bond_separation = 4;
-  int const pose_ind = ctx.dispatch_indices[0][cta];
-
-  int const rot_ind1 = ctx.dispatch_indices[1][cta];
-  int const rot_ind2 = ctx.dispatch_indices[2][cta];
-
-  int const block_ind1 = ctx.block_ind_for_rot[rot_ind1];
-  int const block_ind2 = ctx.block_ind_for_rot[rot_ind2];
-
-  int const block_type1 = ctx.block_type_ind_for_rot[rot_ind1];
-  int const block_type2 = ctx.block_type_ind_for_rot[rot_ind2];
-
-  if (block_type1 < 0 || block_type2 < 0) {
-    return;
-  }
-
-  int const n_atoms1 = ctx.block_type_n_atoms[block_type1];
-  int const n_atoms2 = ctx.block_type_n_atoms[block_type2];
-
-  auto load_tile_invariant_interres_data =
-      ([=] LOAD_TILE_INVARIANT_INTERRES_DATA);
-
-  auto load_interres1_tile_data_to_shared =
-      ([=] LOAD_INTERRES1_TILE_DATA_TO_SHARED);
-
-  auto load_interres2_tile_data_to_shared =
-      ([=] LOAD_INTERRES2_TILE_DATA_TO_SHARED);
-
-  auto load_interres_data_from_shared = ([=] LOAD_INTERRES_DATA_FROM_SHARED);
-
-  auto eval_interres_atom_pair_scores = ([=] EVAL_INTERRES_ATOM_PAIR_SCORES);
-
-  auto store_calculated_energies =
-      ([=](TMOL_THREAD ElecScoringData<Real>& score_dat,
-           TMOL_SHARED_REF(shared_mem_union) shared) {
-        ;  // no op for gradients ()
-      });
-
-  auto load_tile_invariant_intrares_data =
-      ([=] LOAD_TILE_INVARIANT_INTRARES_DATA);
-
-  auto load_intrares1_tile_data_to_shared =
-      ([=] LOAD_INTRARES1_TILE_DATA_TO_SHARED);
-
-  auto load_intrares2_tile_data_to_shared =
-      ([=] LOAD_INTRARES2_TILE_DATA_TO_SHARED);
-
-  auto load_intrares_data_from_shared = ([=] LOAD_INTRARES_DATA_FROM_SHARED);
-
-  auto eval_intrares_atom_pair_scores = ([=] EVAL_INTRARES_ATOM_PAIR_SCORES);
-
-  tmol::score::common::tile_evaluate_rot_pair<
+  elec_evaluate_pair<
+      ElecMode::Backward,
+      true,
       DeviceDispatch,
       D,
-      ElecScoringData<Real>,
-      ElecScoringData<Real>,
       Real,
-      elec_tile_size>(
-      shared,
-      pose_ind,
-      rot_ind1,
-      rot_ind2,
-      block_ind1,
-      block_ind2,
-      block_type1,
-      block_type2,
-      n_atoms1,
-      n_atoms2,
-      load_tile_invariant_interres_data,
-      load_interres1_tile_data_to_shared,
-      load_interres2_tile_data_to_shared,
-      load_interres_data_from_shared,
-      eval_interres_atom_pair_scores,
-      store_calculated_energies,
-      load_tile_invariant_intrares_data,
-      load_intrares1_tile_data_to_shared,
-      load_intrares2_tile_data_to_shared,
-      load_intrares_data_from_shared,
-      eval_intrares_atom_pair_scores,
-      store_calculated_energies,
-      lane);
+      Int,
+      launch_t>(ctx, shared, cta, lane, pair_shard, pair_shards);
 }
 
 }  // namespace potentials
