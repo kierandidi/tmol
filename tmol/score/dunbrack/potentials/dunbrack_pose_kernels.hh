@@ -33,12 +33,44 @@ namespace potentials {
 
 using tmol::portable::Vec;
 
+// Fixed-size storage is an execution choice, not a bound on supported
+// chemistry. Larger dihedral layouts retain the global scratch route.
+template <class T, int Capacity>
+struct DunbrackLocalBuffer {
+  T values[Capacity > 0 ? Capacity : 1];
+  int64_t shape[1] = {Capacity};
+  int64_t stride[1] = {1};
+  template <tmol::Device D>
+  TMOL_HOST_DEVICE_FUNC TensorAccessor<T, 1, D> access(
+      TView<T, 2, D> const& global, int residue) {
+    if constexpr (Capacity > 0)
+      return TensorAccessor<T, 1, D>(values, shape, stride);
+    else
+      return global[residue];
+  }
+};
+
+template <class Function, bool Derivatives, int Capacity, bool Backward>
+struct DunbrackTaggedEvaluator {
+  Function function;
+  TMOL_DEVICE_FUNC void operator()(int index) const {
+    if constexpr (Backward)
+      function(index, std::integral_constant<int, Capacity>{});
+    else
+      function(
+          index,
+          std::integral_constant<bool, Derivatives>{},
+          std::integral_constant<int, Capacity>{});
+  }
+};
+
 template <
     template <tmol::Device> class DeviceDispatch,
     tmol::Device D,
     typename Real,
     typename Int,
-    typename SizeInt = int64_t>
+    typename SizeInt = int64_t,
+    int LocalCapacity = D == tmol::Device::CUDA ? 8 : 0>
 void dunbrack_pose_forward(
     ContextManager& mgr,
     TView<Vec<Real, 3>, 1, D> rot_coords,
@@ -134,8 +166,11 @@ void dunbrack_pose_forward(
   // Define nt and reduce_t
   CTA_REAL_REDUCE_T_TYPEDEF;
 
-  auto func = ([=] TMOL_DEVICE_FUNC(int ind, auto deriv_tag) {
+  auto func = ([=] TMOL_DEVICE_FUNC(int ind, auto deriv_tag, auto local_tag) {
     constexpr bool calc_derivs = decltype(deriv_tag)::value;
+    (void)dihedral_deriv;
+    (void)dterm_dtor_xyz;
+    constexpr int capacity = decltype(local_tag)::value;
     int const pose_index = ind / max_n_blocks;
     int const block_index = ind % max_n_blocks;
     int const block_type_index = first_rot_block_type[pose_index][block_index];
@@ -153,6 +188,31 @@ void dunbrack_pose_forward(
       return;
     }
 
+    DunbrackLocalBuffer<Vec<Int, 4>, capacity> atom_storage;
+    DunbrackLocalBuffer<Real, capacity> angle_storage;
+    DunbrackLocalBuffer<CoordQuad<Real>, calc_derivs ? capacity : 0>
+        derivative_storage;
+    DunbrackLocalBuffer<CoordQuad<Real>, calc_derivs && capacity ? 3 : 0>
+        term_storage;
+    auto atoms =
+        atom_storage.template access<D>(dihedral_atom_inds, rotamer_index);
+    auto angles =
+        angle_storage.template access<D>(dihedral_values, rotamer_index);
+    TensorAccessor<CoordQuad<Real>, 1, D> derivatives, term_derivatives;
+    if constexpr (calc_derivs) {
+      derivatives =
+          derivative_storage.template access<D>(dihedral_deriv, rotamer_index);
+      term_derivatives =
+          term_storage.template access<D>(dterm_dtor_xyz, rotamer_index);
+    }
+    Int local_rot_assignment, local_semi_assignment;
+    Int* rot_assignment = capacity
+                              ? &local_rot_assignment
+                              : &rotameric_rottable_assignment[rotamer_index];
+    Int* semi_assignment =
+        capacity ? &local_semi_assignment
+                 : &semirotameric_rottable_assignment[rotamer_index];
+
     for (int ii = 0; ii < block_n_dihedrals[block_type_index]; ii++) {
       auto dih_uaids = block_dih_uaids[block_type_index][ii];
       bool fail = false;
@@ -164,18 +224,17 @@ void dunbrack_pose_forward(
           break;
         }
 
-        dihedral_atom_inds[rotamer_index][ii][jj] =
-            resolve_rotamer_atom_from_uaid(
-                uaid,
-                rotamer_index,
-                block_index,
-                pose_index,
-                rot_coord_offset,
-                first_rot_for_block,
-                first_rot_block_type,
-                pose_stack_inter_block_connections,
-                block_type_atom_downstream_of_conn);
-        if (dihedral_atom_inds[rotamer_index][ii][jj] == -1) {
+        atoms[ii][jj] = resolve_rotamer_atom_from_uaid(
+            uaid,
+            rotamer_index,
+            block_index,
+            pose_index,
+            rot_coord_offset,
+            first_rot_for_block,
+            first_rot_block_type,
+            pose_stack_inter_block_connections,
+            block_type_atom_downstream_of_conn);
+        if (atoms[ii][jj] == -1) {
           // UAID resolution failed
           fail = true;
           break;
@@ -184,8 +243,7 @@ void dunbrack_pose_forward(
       if (fail) {  // if the dihedral resolution failed, let's fill the cached
                    // value with -1s since we might have partially filled it
                    // above
-        dihedral_atom_inds[rotamer_index][ii] =
-            tmol::portable::Vec<Int, 4>::Constant(-1);
+        atoms[ii] = tmol::portable::Vec<Int, 4>::Constant(-1);
       }
 
       // a terminus has no phi or no psi, so a default stands in for it. It is
@@ -202,28 +260,28 @@ void dunbrack_pose_forward(
       if (calc_derivs) {
         measure_dihedral_V_dV(
             TensorAccessor<Vec<Real, 3>, 1, D>(rot_coords),
-            dihedral_atom_inds[rotamer_index][ii],
+            atoms[ii],
             dih_default,
-            dihedral_values[rotamer_index][ii],
-            dihedral_deriv[rotamer_index][ii]);
+            angles[ii],
+            derivatives[ii]);
       } else {
         measure_dihedral_V(
             TensorAccessor<Vec<Real, 3>, 1, D>(rot_coords),
-            dihedral_atom_inds[rotamer_index][ii],
+            atoms[ii],
             dih_default,
-            dihedral_values[rotamer_index][ii]);
+            angles[ii]);
       }
     }
 
     // Templated on there being 2 backbone dihedrals for canonical aas.
     classify_rotamer_for_block<2>(
-        dihedral_values[rotamer_index],
+        angles,
         block_n_rotameric_chi[block_type_index],
         block_rotamer_index_to_table_index[block_type_index],
         rotameric_rotind2tableind,
         semirotameric_rotind2tableind,
-        rotameric_rottable_assignment[rotamer_index],
-        semirotameric_rottable_assignment[rotamer_index]);
+        (*rot_assignment),
+        (*semi_assignment));
 
     if (block_rotameric_index[block_type_index] != -1) {
       Real prob = rotameric_chi_probability_for_block(
@@ -235,12 +293,11 @@ void dunbrack_pose_forward(
           rotameric_bb_periodicity,
           block_probability_table_offset[block_type_index],
           block_rotamer_table_set[block_type_index],
-          dihedral_values[rotamer_index],
-          rotameric_rottable_assignment[rotamer_index],
-          calc_derivs ? dterm_dtor_xyz[rotamer_index]
+          angles,
+          (*rot_assignment),
+          calc_derivs ? term_derivatives
                       : TensorAccessor<CoordQuad<Real>, 1, D>(),
-          calc_derivs ? dihedral_deriv[rotamer_index]
-                      : TensorAccessor<CoordQuad<Real>, 1, D>(),
+          calc_derivs ? derivatives : TensorAccessor<CoordQuad<Real>, 1, D>(),
           calc_derivs);
 
       if (output_block_pair_energies) {
@@ -254,15 +311,15 @@ void dunbrack_pose_forward(
         // into the phi and psi definiing atoms of the _first rotamers_
         // of residues i+1 and i-1 respectively. This is dedicedly weird
         // unless there is only one rotmaer for each residue
-        Vec<Int, DIH_N_ATOMS> phi_ats = dihedral_atom_inds[rotamer_index][0];
-        Vec<Int, DIH_N_ATOMS> psi_ats = dihedral_atom_inds[rotamer_index][1];
+        Vec<Int, DIH_N_ATOMS> phi_ats = atoms[0];
+        Vec<Int, DIH_N_ATOMS> psi_ats = atoms[1];
         for (int j = 0; j < DIH_N_ATOMS; ++j) {
           if (phi_ats[j] != -1)
             accumulate<D, Vec<Real, 3>>::add(
-                dV_dx[0][phi_ats[j]], dterm_dtor_xyz[rotamer_index][0].row(j));
+                dV_dx[0][phi_ats[j]], term_derivatives[0].row(j));
           if (psi_ats[j] != -1)
             accumulate<D, Vec<Real, 3>>::add(
-                dV_dx[0][psi_ats[j]], dterm_dtor_xyz[rotamer_index][1].row(j));
+                dV_dx[0][psi_ats[j]], term_derivatives[1].row(j));
         }
       }
     }
@@ -284,32 +341,30 @@ void dunbrack_pose_forward(
           block_mean_table_offset[block_type_index],
           block_n_chi[block_type_index],
           // Block info
-          dihedral_values[rotamer_index],
+          angles,
           ii,
-          rotameric_rottable_assignment[rotamer_index],
+          (*rot_assignment),
           // Out
-          calc_derivs ? dterm_dtor_xyz[rotamer_index]
+          calc_derivs ? term_derivatives
                       : TensorAccessor<CoordQuad<Real>, 1, D>(),
-          calc_derivs ? dihedral_deriv[rotamer_index]
-                      : TensorAccessor<CoordQuad<Real>, 1, D>(),
+          calc_derivs ? derivatives : TensorAccessor<CoordQuad<Real>, 1, D>(),
           calc_derivs);
       rotameric_chi_dev_penalty += Erotdev;
 
       if (calc_derivs) {
-        Vec<Int, DIH_N_ATOMS> tor0_ats = dihedral_atom_inds[rotamer_index][0];
-        Vec<Int, DIH_N_ATOMS> tor1_ats = dihedral_atom_inds[rotamer_index][1];
-        Vec<Int, DIH_N_ATOMS> tor2_ats =
-            dihedral_atom_inds[rotamer_index][2 + ii];
+        Vec<Int, DIH_N_ATOMS> tor0_ats = atoms[0];
+        Vec<Int, DIH_N_ATOMS> tor1_ats = atoms[1];
+        Vec<Int, DIH_N_ATOMS> tor2_ats = atoms[2 + ii];
         for (int j = 0; j < DIH_N_ATOMS; ++j) {
           if (tor0_ats[j] != -1)
             accumulate<D, Vec<Real, 3>>::add(
-                dV_dx[1][tor0_ats[j]], dterm_dtor_xyz[rotamer_index][0].row(j));
+                dV_dx[1][tor0_ats[j]], term_derivatives[0].row(j));
           if (tor1_ats[j] != -1)
             accumulate<D, Vec<Real, 3>>::add(
-                dV_dx[1][tor1_ats[j]], dterm_dtor_xyz[rotamer_index][1].row(j));
+                dV_dx[1][tor1_ats[j]], term_derivatives[1].row(j));
           if (tor2_ats[j] != -1)
             accumulate<D, Vec<Real, 3>>::add(
-                dV_dx[1][tor2_ats[j]], dterm_dtor_xyz[rotamer_index][2].row(j));
+                dV_dx[1][tor2_ats[j]], term_derivatives[2].row(j));
         }
       }
     }
@@ -337,13 +392,12 @@ void dunbrack_pose_forward(
           block_semirotameric_tableset_offset[block_type_index],
           block_n_chi[block_type_index] + 1,
 
-          dihedral_values[rotamer_index],
-          semirotameric_rottable_assignment[rotamer_index],
+          angles,
+          (*semi_assignment),
 
-          calc_derivs ? dterm_dtor_xyz[rotamer_index]
+          calc_derivs ? term_derivatives
                       : TensorAccessor<CoordQuad<Real>, 1, D>(),
-          calc_derivs ? dihedral_deriv[rotamer_index]
-                      : TensorAccessor<CoordQuad<Real>, 1, D>(),
+          calc_derivs ? derivatives : TensorAccessor<CoordQuad<Real>, 1, D>(),
           calc_derivs);
 
       if (output_block_pair_energies) {
@@ -354,38 +408,49 @@ void dunbrack_pose_forward(
 
       if (calc_derivs) {
         int last = block_n_chi[block_type_index] + 1;  // = +2 - 1
-        Vec<Int, DIH_N_ATOMS> tor0_ats = dihedral_atom_inds[rotamer_index][0];
-        Vec<Int, DIH_N_ATOMS> tor1_ats = dihedral_atom_inds[rotamer_index][1];
-        Vec<Int, DIH_N_ATOMS> tor2_ats =
-            dihedral_atom_inds[rotamer_index][last];
+        Vec<Int, DIH_N_ATOMS> tor0_ats = atoms[0];
+        Vec<Int, DIH_N_ATOMS> tor1_ats = atoms[1];
+        Vec<Int, DIH_N_ATOMS> tor2_ats = atoms[last];
         for (int j = 0; j < DIH_N_ATOMS; ++j) {
           if (tor0_ats[j] != -1)
             accumulate<D, Vec<Real, 3>>::add(
-                dV_dx[2][tor0_ats[j]], dterm_dtor_xyz[rotamer_index][0].row(j));
+                dV_dx[2][tor0_ats[j]], term_derivatives[0].row(j));
           if (tor1_ats[j] != -1)
             accumulate<D, Vec<Real, 3>>::add(
-                dV_dx[2][tor1_ats[j]], dterm_dtor_xyz[rotamer_index][1].row(j));
+                dV_dx[2][tor1_ats[j]], term_derivatives[1].row(j));
           if (tor2_ats[j] != -1)
             accumulate<D, Vec<Real, 3>>::add(
-                dV_dx[2][tor2_ats[j]], dterm_dtor_xyz[rotamer_index][2].row(j));
+                dV_dx[2][tor2_ats[j]], term_derivatives[2].row(j));
         }
       }
     }
   });
 
-  // Specialize the two paths so unused derivative scratch and arithmetic
-  // disappear from score-only kernels without adding per-residue branches.
-  if (accumulate_derivs) {
-    auto eval =
-        ([=] TMOL_DEVICE_FUNC(int ind) { func(ind, std::true_type{}); });
+  // Separate launches keep the fallback free of local arrays, and score-only
+  // kernels free of derivative storage. The numerical body remains identical.
+  auto launch = [&](auto deriv_tag, auto local_tag) {
+    DunbrackTaggedEvaluator<
+        decltype(func),
+        decltype(deriv_tag)::value,
+        decltype(local_tag)::value,
+        false>
+        eval{func};
     DeviceDispatch<D>::template forall_grouped<launch_t>(
         mgr, n_poses, max_n_blocks, eval);
-  } else {
-    auto eval =
-        ([=] TMOL_DEVICE_FUNC(int ind) { func(ind, std::false_type{}); });
-    DeviceDispatch<D>::template forall_grouped<launch_t>(
-        mgr, n_poses, max_n_blocks, eval);
-  }
+  };
+  auto select_storage = [&](auto deriv_tag) {
+    if constexpr (LocalCapacity > 0) {
+      if (max_n_dih <= LocalCapacity) {
+        launch(deriv_tag, std::integral_constant<int, LocalCapacity>{});
+        return;
+      }
+    }
+    launch(deriv_tag, std::integral_constant<int, 0>{});
+  };
+  if (accumulate_derivs)
+    select_storage(std::true_type{});
+  else
+    select_storage(std::false_type{});
 }
 
 template <
@@ -393,7 +458,8 @@ template <
     tmol::Device D,
     typename Real,
     typename Int,
-    typename SizeInt = int64_t>
+    typename SizeInt = int64_t,
+    int LocalCapacity = D == tmol::Device::CUDA ? 8 : 0>
 void dunbrack_pose_backward(
     ContextManager& mgr,
     TView<Vec<Real, 3>, 1, D> rot_coords,
@@ -482,7 +548,11 @@ void dunbrack_pose_backward(
   // Optimal launch box on v100 and a100 is nt=32, vt=1
   LAUNCH_BOX_32;
 
-  auto func = ([=] TMOL_DEVICE_FUNC(int ind) {
+  auto func = ([=] TMOL_DEVICE_FUNC(int ind, auto local_tag) {
+    constexpr bool calc_derivs = true;
+    (void)dihedral_deriv;
+    (void)dterm_dtor_xyz;
+    constexpr int capacity = decltype(local_tag)::value;
     int const pose_index = ind / max_n_blocks;
     int const block_index = ind % max_n_blocks;
     int const block_type_index = first_rot_block_type[pose_index][block_index];
@@ -506,6 +576,24 @@ void dunbrack_pose_backward(
       return;
     }
 
+    DunbrackLocalBuffer<Vec<Int, 4>, capacity> atom_storage;
+    DunbrackLocalBuffer<Real, capacity> angle_storage;
+    DunbrackLocalBuffer<CoordQuad<Real>, calc_derivs ? capacity : 0>
+        derivative_storage;
+    DunbrackLocalBuffer<CoordQuad<Real>, calc_derivs && capacity ? 3 : 0>
+        term_storage;
+    auto atoms =
+        atom_storage.template access<D>(dihedral_atom_inds, rotamer_index);
+    auto angles =
+        angle_storage.template access<D>(dihedral_values, rotamer_index);
+    TensorAccessor<CoordQuad<Real>, 1, D> derivatives, term_derivatives;
+    if constexpr (calc_derivs) {
+      derivatives =
+          derivative_storage.template access<D>(dihedral_deriv, rotamer_index);
+      term_derivatives =
+          term_storage.template access<D>(dterm_dtor_xyz, rotamer_index);
+    }
+
     for (int ii = 0; ii < block_n_dihedrals[block_type_index]; ii++) {
       auto dih_uaids = block_dih_uaids[block_type_index][ii];
       bool fail = false;
@@ -517,18 +605,17 @@ void dunbrack_pose_backward(
           break;
         }
 
-        dihedral_atom_inds[rotamer_index][ii][jj] =
-            resolve_rotamer_atom_from_uaid(
-                uaid,
-                rotamer_index,
-                block_index,
-                pose_index,
-                rot_coord_offset,
-                first_rot_for_block,
-                first_rot_block_type,
-                pose_stack_inter_block_connections,
-                block_type_atom_downstream_of_conn);
-        if (dihedral_atom_inds[rotamer_index][ii][jj] == -1) {
+        atoms[ii][jj] = resolve_rotamer_atom_from_uaid(
+            uaid,
+            rotamer_index,
+            block_index,
+            pose_index,
+            rot_coord_offset,
+            first_rot_for_block,
+            first_rot_block_type,
+            pose_stack_inter_block_connections,
+            block_type_atom_downstream_of_conn);
+        if (atoms[ii][jj] == -1) {
           // UAID resolution failed
           fail = true;
           break;
@@ -537,8 +624,7 @@ void dunbrack_pose_backward(
       if (fail) {  // if the dihedral resolution failed, let's fill the cached
                    // value with -1s since we might have partially filled it
                    // above
-        dihedral_atom_inds[rotamer_index][ii] =
-            tmol::portable::Vec<Int, 4>::Constant(-1);
+        atoms[ii] = tmol::portable::Vec<Int, 4>::Constant(-1);
       }
 
       // a terminus has no phi or no psi, so a default stands in for it. It is
@@ -554,16 +640,16 @@ void dunbrack_pose_backward(
 
       measure_dihedral_V_dV(
           TensorAccessor<Vec<Real, 3>, 1, D>(rot_coords),
-          dihedral_atom_inds[rotamer_index][ii],
+          atoms[ii],
           dih_default,
-          dihedral_values[rotamer_index][ii],
-          dihedral_deriv[rotamer_index][ii]);
+          angles[ii],
+          derivatives[ii]);
     }
 
     Int rotameric_rottable_assignment, semirotameric_rottable_assignment;
     // Templated on there being 2 backbone dihedrals for canonical aas.
     classify_rotamer_for_block<2>(
-        dihedral_values[rotamer_index],
+        angles,
         block_n_rotameric_chi[block_type_index],
         block_rotamer_index_to_table_index[block_type_index],
         rotameric_rotind2tableind,
@@ -581,23 +667,23 @@ void dunbrack_pose_backward(
           rotameric_bb_periodicity,
           block_probability_table_offset[block_type_index],
           block_rotamer_table_set[block_type_index],
-          dihedral_values[rotamer_index],
+          angles,
           rotameric_rottable_assignment,
-          dterm_dtor_xyz[rotamer_index],
-          dihedral_deriv[rotamer_index]);
+          term_derivatives,
+          derivatives);
 
-      Vec<Int, DIH_N_ATOMS> phi_ats = dihedral_atom_inds[rotamer_index][0];
-      Vec<Int, DIH_N_ATOMS> psi_ats = dihedral_atom_inds[rotamer_index][1];
+      Vec<Int, DIH_N_ATOMS> phi_ats = atoms[0];
+      Vec<Int, DIH_N_ATOMS> psi_ats = atoms[1];
       Real block_weight_0 = dTdV[0][pose_index][block_index][block_index];
       for (int j = 0; j < DIH_N_ATOMS; ++j) {
         if (phi_ats[j] != -1)
           accumulate<D, Vec<Real, 3>>::add(
               dV_dx[0][phi_ats[j]],
-              dterm_dtor_xyz[rotamer_index][0].row(j) * block_weight_0);
+              term_derivatives[0].row(j) * block_weight_0);
         if (psi_ats[j] != -1)
           accumulate<D, Vec<Real, 3>>::add(
               dV_dx[0][psi_ats[j]],
-              dterm_dtor_xyz[rotamer_index][1].row(j) * block_weight_0);
+              term_derivatives[1].row(j) * block_weight_0);
       }
     }
 
@@ -617,31 +703,30 @@ void dunbrack_pose_backward(
           block_mean_table_offset[block_type_index],
           block_n_chi[block_type_index],
           // Block info
-          dihedral_values[rotamer_index],
+          angles,
           ii,
           rotameric_rottable_assignment,
           // Out
-          dterm_dtor_xyz[rotamer_index],
-          dihedral_deriv[rotamer_index]);
+          term_derivatives,
+          derivatives);
 
       Real block_weight_1 = dTdV[1][pose_index][block_index][block_index];
-      Vec<Int, DIH_N_ATOMS> tor0_ats = dihedral_atom_inds[rotamer_index][0];
-      Vec<Int, DIH_N_ATOMS> tor1_ats = dihedral_atom_inds[rotamer_index][1];
-      Vec<Int, DIH_N_ATOMS> tor2_ats =
-          dihedral_atom_inds[rotamer_index][2 + ii];
+      Vec<Int, DIH_N_ATOMS> tor0_ats = atoms[0];
+      Vec<Int, DIH_N_ATOMS> tor1_ats = atoms[1];
+      Vec<Int, DIH_N_ATOMS> tor2_ats = atoms[2 + ii];
       for (int j = 0; j < DIH_N_ATOMS; ++j) {
         if (tor0_ats[j] != -1)
           accumulate<D, Vec<Real, 3>>::add(
               dV_dx[1][tor0_ats[j]],
-              dterm_dtor_xyz[rotamer_index][0].row(j) * block_weight_1);
+              term_derivatives[0].row(j) * block_weight_1);
         if (tor1_ats[j] != -1)
           accumulate<D, Vec<Real, 3>>::add(
               dV_dx[1][tor1_ats[j]],
-              dterm_dtor_xyz[rotamer_index][1].row(j) * block_weight_1);
+              term_derivatives[1].row(j) * block_weight_1);
         if (tor2_ats[j] != -1)
           accumulate<D, Vec<Real, 3>>::add(
               dV_dx[1][tor2_ats[j]],
-              dterm_dtor_xyz[rotamer_index][2].row(j) * block_weight_1);
+              term_derivatives[2].row(j) * block_weight_1);
       }
     }
 
@@ -658,37 +743,52 @@ void dunbrack_pose_backward(
           block_semirotameric_tableset_offset[block_type_index],
           block_n_chi[block_type_index] + 1,
 
-          dihedral_values[rotamer_index],
+          angles,
           semirotameric_rottable_assignment,
 
-          dterm_dtor_xyz[rotamer_index],
-          dihedral_deriv[rotamer_index]);
+          term_derivatives,
+          derivatives);
 
       Real block_weight_2 = dTdV[2][pose_index][block_index][block_index];
 
       int last = block_n_chi[block_type_index] + 1;
-      Vec<Int, DIH_N_ATOMS> tor0_ats = dihedral_atom_inds[rotamer_index][0];
-      Vec<Int, DIH_N_ATOMS> tor1_ats = dihedral_atom_inds[rotamer_index][1];
-      Vec<Int, DIH_N_ATOMS> tor2_ats = dihedral_atom_inds[rotamer_index][last];
+      Vec<Int, DIH_N_ATOMS> tor0_ats = atoms[0];
+      Vec<Int, DIH_N_ATOMS> tor1_ats = atoms[1];
+      Vec<Int, DIH_N_ATOMS> tor2_ats = atoms[last];
       for (int j = 0; j < DIH_N_ATOMS; ++j) {
         if (tor0_ats[j] != -1)
           accumulate<D, Vec<Real, 3>>::add(
               dV_dx[2][tor0_ats[j]],
-              dterm_dtor_xyz[rotamer_index][0].row(j) * block_weight_2);
+              term_derivatives[0].row(j) * block_weight_2);
         if (tor1_ats[j] != -1)
           accumulate<D, Vec<Real, 3>>::add(
               dV_dx[2][tor1_ats[j]],
-              dterm_dtor_xyz[rotamer_index][1].row(j) * block_weight_2);
+              term_derivatives[1].row(j) * block_weight_2);
         if (tor2_ats[j] != -1)
           accumulate<D, Vec<Real, 3>>::add(
               dV_dx[2][tor2_ats[j]],
-              dterm_dtor_xyz[rotamer_index][2].row(j) * block_weight_2);
+              term_derivatives[2].row(j) * block_weight_2);
       }
     }
   });
 
-  DeviceDispatch<D>::template forall_grouped<launch_t>(
-      mgr, n_poses, max_n_blocks, func);
+  auto launch = [&](auto local_tag) {
+    DunbrackTaggedEvaluator<
+        decltype(func),
+        true,
+        decltype(local_tag)::value,
+        true>
+        eval{func};
+    DeviceDispatch<D>::template forall_grouped<launch_t>(
+        mgr, n_poses, max_n_blocks, eval);
+  };
+  if constexpr (LocalCapacity > 0) {
+    if (max_n_dih <= LocalCapacity) {
+      launch(std::integral_constant<int, LocalCapacity>{});
+      return;
+    }
+  }
+  launch(std::integral_constant<int, 0>{});
 }
 
 }  // namespace potentials

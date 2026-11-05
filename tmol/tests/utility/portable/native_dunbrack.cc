@@ -38,7 +38,7 @@ auto indices32 =
 // Scratch must be overwritten before consumption. Exercise all three score
 // channels, real and undefined torsions, mirrored defaults, padded blocks and
 // residue types without a Dunbrack assignment. No framework allocator is used.
-template <class Real>
+template <class Real, int LocalCapacity = 0>
 std::vector<Real> evaluate(bool poison, bool derivs, bool block_pairs) {
   using namespace tmol_test;
   using tmol::portable::Vec;
@@ -109,7 +109,13 @@ std::vector<Real> evaluate(bool poison, bool derivs, bool block_pairs) {
   Vec<Real, 3> gradient[3 * na];
   for (auto& v : gradient) v = Vec<Real, 3>::Zero();
   tmol::ContextManager mgr;
-  dunbrack_pose_forward<::SerialOps, tmol::Device::CPU, Real, int>(
+  dunbrack_pose_forward<
+      ::SerialOps,
+      tmol::Device::CPU,
+      Real,
+      int,
+      int64_t,
+      LocalCapacity>(
       mgr,
       view(xyz, {na}),
       view(offsets, {nr}),
@@ -182,6 +188,11 @@ void check_workspace() {
       auto poisoned = evaluate<Real>(true, derivs, block_pairs);
       if (clean != poisoned)
         throw std::runtime_error("Dunbrack consumed uninitialized scratch");
+      if (clean != evaluate<Real, 8>(true, derivs, block_pairs))
+        throw std::runtime_error("local Dunbrack scratch changed science");
+      // The layout has five dihedrals: capacity two must fall back safely.
+      if (clean != evaluate<Real, 2>(true, derivs, block_pairs))
+        throw std::runtime_error("Dunbrack global fallback changed science");
       for (auto value : poisoned)
         if (!std::isfinite(value)) throw std::runtime_error("nonfinite result");
     }
