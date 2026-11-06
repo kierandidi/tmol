@@ -91,3 +91,13 @@ unused LJ/LK types retain explicit NaN rows; padding is not a valid real type.
 Hydrogen-bond polynomial preparation retains the canonical float64 coefficients
 and validates complete family-pair coverage before a backend chooses its numeric
 representation. Torch keeps its public tensor containers and device caches.
+
+Native bump pruning shares its preliminary graph and energy bounds through
+`BumpGraphContext` and three allocation-free stages in
+`pack/compiled/interaction_graph_bounds.hh`. Adapters zero count and energy
+buffers, scan block-pair counts to size chunk storage, then scan chunk sizes to
+size pair-energy storage. Offsets and scan totals use int64; native dispatch
+sizes are checked. Empty block bounds retain the mature sentinel `1234`.
+The allocating Torch controller calls these same stages. The two size-discovery
+barriers remain part of the execution contract; a frontend must implement them
+before claiming support for this packing workflow.
