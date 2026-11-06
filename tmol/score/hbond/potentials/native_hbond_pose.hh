@@ -63,10 +63,10 @@ void launch_hbond_pose(
                            && ctx.max_n_blocks > 1
                            && int64_t(n_poses) * ctx.max_n_blocks >= 4096
                            && compact_neighbor_capacity >= (1 << 15);
-  // Preserve the existing combined small-stack path and large score-only
-  // specialization; splitting only pays off for large derivative workloads.
-  if (accumulate_derivs || n_rots < 512) {
-    if (accumulate_derivs && split_pairs) {
+  // Both derivative modes are known by the host before launch. Carry that
+  // information into the device body, including for small pose stacks.
+  if (accumulate_derivs) {
+    if (split_pairs) {
       launch(
           std::true_type{},
           std::integral_constant<PairMode, PairMode::Inter>{});
@@ -74,7 +74,7 @@ void launch_hbond_pose(
           std::true_type{},
           std::integral_constant<PairMode, PairMode::Intra>{});
     } else {
-      launch(accumulate_derivs, Both{});
+      launch(std::true_type{}, Both{});
     }
   } else {
     launch(std::false_type{}, Both{});
