@@ -79,6 +79,9 @@ def prepare_atom_records(
             0, dtype=extended_atom_record_dtype if extended else atom_record_dtype
         )
 
+    if type_indices.dtype.kind not in "iu" or atom_indices.dtype.kind not in "iu":
+        raise TypeError("Atom type and local atom indices must have integer dtype")
+
     if extended and atom_types is None:
         raise ValueError("Extended records require chemical atom types")
 
@@ -87,7 +90,9 @@ def prepare_atom_records(
     first_atom = int(atom_indices.min())
     width = int(atom_indices.max()) - first_atom + 1
     keys, inverse = numpy.unique(
-        type_indices.astype(numpy.int64) * width + atom_indices - first_atom,
+        type_indices.astype(numpy.int64, copy=False) * width
+        + atom_indices.astype(numpy.int64, copy=False)
+        - first_atom,
         return_inverse=True,
     )
     names = numpy.empty(len(keys), dtype=object)

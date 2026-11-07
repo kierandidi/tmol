@@ -8,7 +8,9 @@ import pytest
 from tmol_core.io.atom_records import prepare_atom_records, format_atom_line
 
 
-def projected(*, extended=False, include_virtual=False, unused_chemistry=False):
+def projected(
+    *, extended=False, include_virtual=False, unused_chemistry=False, index_dtype=None
+):
     atom_types = [Record(name="metal", element="Zn"), Record(name="virt", element="X")]
     atoms = [
         Record(name="ZN-long", atom_type="metal"),
@@ -51,10 +53,10 @@ def projected(*, extended=False, include_virtual=False, unused_chemistry=False):
         local_atoms = [1, 2, 1, 1]
     return prepare_atom_records(
         blocks,
-        [active_type] * 4,
+        np.asarray([active_type] * 4, dtype=index_dtype),
         [1, 1, 1, 2],
         [2, 2, 3, 3],
-        local_atoms,
+        np.asarray(local_atoms, dtype=index_dtype),
         np.array([[1.123456789123, 0, 0], [2, 0, 0], [3, 0, 0], [4, 0, 0]]),
         chain_indices=[0, 0, 1, 0],
         residue_labels=[5, 5, 5, 5],
@@ -152,4 +154,10 @@ def test_unemitted_custom_chemistry_does_not_change_output(extended, include_vir
         extended=extended, include_virtual=include_virtual, unused_chemistry=True
     )
     assert actual.dtype == expected.dtype
+    np.testing.assert_array_equal(actual, expected)
+
+
+def test_unsigned_atom_indices_preserve_chemical_identity():
+    expected = projected(extended=True)
+    actual = projected(extended=True, index_dtype=np.uint64)
     np.testing.assert_array_equal(actual, expected)
