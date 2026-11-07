@@ -149,3 +149,31 @@ def test_native_refinement_denormal_scope_restores_on_exception():
             assert execution.native.denormal_mode() == (3 if previous >= 0 else -1)
             raise RuntimeError("intentional scope exit")
     assert execution.native.denormal_mode() == previous
+
+
+@pytest.mark.parametrize("dimensions", [3, 4])
+def test_native_pair_gradient_preserves_repeated_gathers(dimensions):
+    # Collinear lattice distances have exact square roots. This isolates the
+    # gradient of repeated gathers from eigensolvers and square-root libraries.
+    xyz = np.zeros((12, dimensions), dtype=np.float32)
+    xyz[:, 0] = np.arange(len(xyz))
+    targets = np.abs(xyz[:, None, 0] - xyz[None, :, 0]) * 1.1
+    plan = (targets, targets, targets, targets, (), ())
+    parameters = prepare_native_refinement(*plan, np.float32)
+    expected_parameters = refinement.prepare_refinement(
+        *plan,
+        index_array=lambda a: torch.as_tensor(a, dtype=torch.long),
+        float_array=lambda a: torch.as_tensor(a, dtype=torch.float32),
+    )
+    x = torch.tensor(xyz, requires_grad=True)
+    loss = refinement.refinement_loss(
+        x,
+        expected_parameters,
+        torch_execution._OPERATIONS,
+        fourth_dimension=0 if dimensions == 4 else None,
+    )
+    expected = torch.autograd.grad(loss, x)[0].numpy()
+    _, actual = native_conformer_execution().native.value_and_grad(
+        xyz, parameters, four_dimensional=dimensions == 4
+    )
+    np.testing.assert_array_equal(actual, expected)

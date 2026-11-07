@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <vector>
 
 namespace tmol {
 namespace ligand {
@@ -110,27 +111,45 @@ RefinementStatus refinement_value_gradient(
 
   Real pair_loss[3] = {Real(0), Real(0), Real(0)};
   const auto n_pairs = p.n_exact + p.n_lower + p.n_upper;
-  for (std::int64_t k = 0; k < n_pairs; ++k) {
-    const auto i = p.pairs[2 * k], j = p.pairs[2 * k + 1];
-    Real delta[4], squared = Real(0);
-    for (int d = 0; d < p.n_dims; ++d) {
-      delta[d] = p.coordinates[i * p.n_dims + d] - p.coordinates[j * p.n_dims + d];
-      squared += delta[d] * delta[d];
-    }
-    const Real distance = std::sqrt(std::max(squared, Real(1e-12)));
-    const int group = k < p.n_exact ? 0 : (k < p.n_exact + p.n_lower ? 1 : 2);
-    Real error = distance - p.distances[k];
-    if (group == 1) error = std::min(error, Real(0));
-    if (group == 2) error = std::max(error, Real(0));
-    pair_loss[group] += error * error;
-    const Real weight = p.weights[group == 0 ? 0 : 1];
-    if (squared >= Real(1e-12)) {
-      const Real scale = (Real(2) * error * weight) / distance;
+  // Preserve the two gather gradients separately before combining them. The
+  // final stress stage gathers every pair together; annealing gathers each
+  // constraint family separately and backpropagates upper, lower, then exact.
+  const auto n_coordinates = p.n_atoms * p.n_dims;
+  std::vector<Real> first(n_coordinates), second(n_coordinates);
+  const std::int64_t boundaries[] = {
+      0, p.n_exact, p.n_exact + p.n_lower, n_pairs};
+  const int n_gathers = p.four_dimensional ? 3 : 1;
+  for (int gather = n_gathers - 1; gather >= 0; --gather) {
+    std::fill(first.begin(), first.end(), Real(0));
+    std::fill(second.begin(), second.end(), Real(0));
+    const auto begin = p.four_dimensional ? boundaries[gather] : 0;
+    const auto end = p.four_dimensional ? boundaries[gather + 1] : n_pairs;
+    for (std::int64_t k = begin; k < end; ++k) {
+      const auto i = p.pairs[2 * k], j = p.pairs[2 * k + 1];
+      Real delta[4], squared = Real(0);
       for (int d = 0; d < p.n_dims; ++d) {
-        const Real derivative = scale * delta[d];
-        gradient[i * p.n_dims + d] += derivative;
-        gradient[j * p.n_dims + d] -= derivative;
+        delta[d] = p.coordinates[i * p.n_dims + d] - p.coordinates[j * p.n_dims + d];
+        squared += delta[d] * delta[d];
       }
+      const Real distance = std::sqrt(std::max(squared, Real(1e-12)));
+      const int group = k < p.n_exact ? 0 : (k < p.n_exact + p.n_lower ? 1 : 2);
+      Real error = distance - p.distances[k];
+      if (group == 1) error = std::min(error, Real(0));
+      if (group == 2) error = std::max(error, Real(0));
+      pair_loss[group] += error * error;
+      const Real weight = p.weights[group == 0 ? 0 : 1];
+      if (squared >= Real(1e-12)) {
+        const Real scale = (Real(2) * error * weight) / distance;
+        for (int d = 0; d < p.n_dims; ++d) {
+          const Real derivative = scale * delta[d];
+          first[i * p.n_dims + d] += derivative;
+          second[j * p.n_dims + d] -= derivative;
+        }
+      }
+    }
+    for (std::int64_t i = 0; i < n_coordinates; ++i) {
+      gradient[i] += second[i];
+      gradient[i] += first[i];
     }
   }
   value = p.weights[0] * pair_loss[0];
