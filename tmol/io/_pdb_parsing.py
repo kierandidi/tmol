@@ -24,25 +24,11 @@ import pandas
 import numpy
 from os import path
 
-atom_record_dtype = numpy.dtype(
-    [
-        ("record_name", str, 6),
-        ("modeli", int),
-        ("chaini", int),
-        ("resi", int),
-        ("atomi", int),
-        ("model", str, 64),
-        ("chain", str, 1),
-        ("resn", str, 3),
-        ("atomn", str, 4),
-        ("x", float),
-        ("y", float),
-        ("z", float),
-        ("location", str, 1),
-        ("insert", str, 1),
-        ("occupancy", float),
-        ("b", float),
-    ]
+from tmol_core.io.atom_records import (  # noqa: F401 (legacy helper imports)
+    atom_record_dtype,
+    format_atom_name as _format_atomn,
+    format_atom_line,
+    ATOM_RECORD_FORMAT as _atom_record_format,
 )
 
 
@@ -170,17 +156,6 @@ def _to_pdb(atom_records):
     return "".join(_to_pdb_lines(atom_records))
 
 
-def _format_atomn(atomn):
-    """Formats atomn via pdb standard.
-
-    If atomn is a single-letter element (N, C, O, S, H), then printed atomn record of the the format ' {atomn:<3}', else of the format '{atomn:<4}'
-    """
-
-    if atomn.startswith(("H", "C", "N", "O", "S")) and len(atomn) < 4:
-        return " {0:<3}".format(atomn)
-    return "{0:<4}".format(atomn)
-
-
 def _to_pdb_lines(atom_records):
     """Yields atom record DataFrame as pdb lines."""
 
@@ -190,7 +165,10 @@ def _to_pdb_lines(atom_records):
     for model_name, records in atom_records.groupby("model"):
         yield "MODEL {}\n".format(model_name)
 
-        for line in _to_atom_lines(r for _, r in records.iterrows()):
+        for line in _to_atom_lines(
+            dict(zip(records.columns, row))
+            for row in records.itertuples(index=False, name=None)
+        ):
             yield line
 
         yield "TER\n"
@@ -199,24 +177,5 @@ def _to_pdb_lines(atom_records):
 
 def _to_atom_lines(atom_records):
     """Convert atom records into ATOM lines."""
-    for r in atom_records:
-        yield _atom_record_format.format(
-            atomi=r["atomi"],
-            atomn=_format_atomn(r["atomn"]),
-            location=r["location"],
-            resn=r["resn"],
-            chain=r["chain"],
-            resi=r["resi"],
-            insert=r["insert"],
-            x=r["x"],
-            y=r["y"],
-            z=r["z"],
-            occupancy=r["occupancy"],
-            b=r["b"],
-        )
-
-
-_atom_record_format = (
-    "ATOM  {atomi:5d} {atomn:^4}{location:^1}{resn:3s} {chain:1}{resi:4d}{insert:1s}   "
-    "{x:8.3f}{y:8.3f}{z:8.3f}{occupancy:6.2f}{b:6.2f}\n"
-)
+    for record in atom_records:
+        yield format_atom_line(record, legacy=True)

@@ -8,6 +8,7 @@ from tmol.types._array import NDArray
 from tmol.types._torch import Tensor
 from tmol.types._functional import _validate_args
 from typing import Optional
+from tmol_core.io.atom_records import prepare_atom_records
 
 
 @_validate_args
@@ -43,7 +44,7 @@ def _atom_records_from_pose_stack(
     ``merge_fragments=False`` to retain the separate fragment residue numbers.
     """
 
-    records = _atom_records_from_coords(
+    return _atom_records_from_coords(
         pose_stack.packed_block_types,
         pose_stack.chain_id64,
         pose_stack.block_type_ind64,
@@ -54,23 +55,12 @@ def _atom_records_from_pose_stack(
         pose_stack.pdb_info.chain_labels,
         pose_stack.pdb_info.atom_occupancy,
         pose_stack.pdb_info.atom_b_factor,
+        split_block_mapping=(
+            getattr(pose_stack, "split_block_mapping", None)
+            if merge_fragments
+            else None
+        ),
     )
-    sbm = getattr(pose_stack, "split_block_mapping", None)
-    if merge_fragments and sbm is not None and sbm.entries:
-        pbt = pose_stack.packed_block_types
-        for entry in sbm.entries:
-            pose_res_label = int(
-                pose_stack.pdb_info.residue_labels[entry.pose_ind, entry.block_ind]
-            )
-            orig_name = pbt.active_block_types[entry.orig_block_type_ind].name
-            fragment_atoms = (records["modeli"] == entry.pose_ind) & (
-                records["resi"] == pose_res_label
-            )
-            records["resn"][fragment_atoms] = orig_name
-            records["resi"][fragment_atoms] = entry.orig_residue_label
-            records["chain"][fragment_atoms] = entry.orig_chain_label
-            records["insert"][fragment_atoms] = entry.orig_ins_code
-    return records
 
 
 @_validate_args
@@ -85,13 +75,13 @@ def _atom_records_from_coords(
     chain_labels: Optional[NDArray[object][:, :]],
     atom_occupancy: NDArray[numpy.float32][:, :],
     atom_b_factor: NDArray[numpy.float32][:, :],
+    *,
+    split_block_mapping=None,
 ) -> NDArray[atom_record_dtype][:]:
     """Create a numpy array holding the atom records needed to write a
     PDB file from the coordinates and block types of a stack of structures,
     laid out in pose-stack form.
     """
-
-    from tmol.utility.tensor._common_operations import _exclusive_cumsum1d
 
     assert pose_like_coords.shape[0] == chain_ind_for_block.shape[0]
     assert pose_like_coords.shape[0] == block_types64.shape[0]
@@ -126,7 +116,6 @@ def _atom_records_from_coords(
     )
 
     n_pose_atoms = torch.sum(n_block_atoms, dim=1)
-    n_atoms_total = torch.sum(n_pose_atoms)
 
     # so we can index just the atoms out of coords tensor, e.g.
     # we need to know which atoms are real and which are padding
@@ -196,18 +185,11 @@ def _atom_records_from_coords(
         ]
     )
 
-    pose_atom_offsets = _exclusive_cumsum1d(n_pose_atoms)
-
     # ok, let's move everything to the cpu/numpy from here forward
     block_types64 = block_types64.cpu().numpy()
     pose_like_coords = pose_like_coords.cpu().detach().numpy()
-    block_coord_offset = block_coord_offset.cpu().numpy()
-    is_real_block = is_real_block.cpu().numpy()
-    n_block_atoms = n_block_atoms.cpu().numpy()
-    n_pose_atoms = n_pose_atoms.cpu().numpy()
     pose_for_real_atom = pose_for_real_atom.cpu().numpy()
     atom_is_real = atom_is_real.cpu().numpy()
-    block_for_atom = block_for_atom.cpu().numpy()
     block_for_real_atom = block_for_real_atom.cpu().numpy()
     block_chain_local_index_for_real_atom = (
         block_chain_local_index_for_real_atom.cpu().numpy()
@@ -215,30 +197,18 @@ def _atom_records_from_coords(
     block_local_atom_index_for_real_atom = (
         block_local_atom_index_for_real_atom.cpu().numpy()
     )
-    pose_atom_offsets = pose_atom_offsets.cpu().numpy()
     chain_ind_for_block = chain_ind_for_block.cpu().numpy()
 
     chain_ind_for_real_atom = chain_ind_for_block[
         pose_for_real_atom, block_for_real_atom
     ]
 
-    results = numpy.empty(n_atoms_total, dtype=atom_record_dtype)
-    results["record_name"] = numpy.full((n_atoms_total,), "ATOM  ", dtype=str)
-    results["modeli"] = pose_for_real_atom
-    results["chaini"] = chain_ind_for_real_atom
-    if residue_labels is not None:
-        results["resi"] = residue_labels[pose_for_real_atom, block_for_real_atom]
+    if residue_labels is None:
+        labels = block_chain_local_index_for_real_atom[atom_is_real] + 1
     else:
-        results["resi"] = block_chain_local_index_for_real_atom + 1
-
-    results["atomi"] = (
-        numpy.arange(n_atoms_total, dtype=int)
-        + 1
-        - pose_atom_offsets[pose_for_real_atom]
-    )
-    results["model"] = pose_for_real_atom + 1
+        labels = residue_labels[pose_for_real_atom, block_for_real_atom]
     if chain_labels is None:
-        # create default chain labels as A, B, ..., Z, AA, AB, ... ZZ; max 702 chains.
+        # Preserve the existing automatic chain-label convention.
         assert max_n_chains <= 26 * 27
         chain_letter_by_ind = numpy.array(
             [
@@ -251,44 +221,28 @@ def _atom_records_from_coords(
             ],
             dtype=object,
         )
-        results["chain"] = chain_letter_by_ind[chain_ind_for_real_atom]
+        chains = chain_letter_by_ind[chain_ind_for_real_atom]
     else:
-        results["chain"] = chain_labels[pose_for_real_atom, block_for_real_atom]
+        chains = chain_labels[pose_for_real_atom, block_for_real_atom]
 
-    # create lookup for atom names
-    bt_names = numpy.array([bt.name3 for bt in pbt.active_block_types])
-    bt_atom_names = numpy.empty((pbt.n_types, pbt.max_n_atoms), dtype=object)
-    for i, bt in enumerate(pbt.active_block_types):
-        for j, at in enumerate(bt.atoms):
-            bt_atom_names[i, j] = at.name
-
-    bt_for_real_atom = block_types64[pose_for_real_atom, block_for_real_atom]
-    results["resn"] = bt_names[bt_for_real_atom]
-    results["atomn"] = bt_atom_names[
-        bt_for_real_atom, block_local_atom_index_for_real_atom
-    ]
-    real_atom_coords = pose_like_coords[atom_is_real]
-    results["x"] = real_atom_coords[:, 0]
-    results["y"] = real_atom_coords[:, 1]
-    results["z"] = real_atom_coords[:, 2]
-    results["insert"] = (
-        residue_insertion_codes[pose_for_real_atom, block_for_real_atom]
-        if residue_insertion_codes is not None
-        else " "
+    return prepare_atom_records(
+        pbt.active_block_types,
+        block_types64[pose_for_real_atom, block_for_real_atom],
+        pose_for_real_atom,
+        block_for_real_atom,
+        block_local_atom_index_for_real_atom,
+        pose_like_coords[atom_is_real],
+        # Retain the historical NumPy string-width convention of this API.
+        record_names=numpy.full(len(pose_for_real_atom), "ATOM  ", dtype=str),
+        chain_indices=chain_ind_for_real_atom,
+        residue_labels=labels,
+        chain_labels=chains,
+        insertion_codes=(
+            residue_insertion_codes[pose_for_real_atom, block_for_real_atom]
+            if residue_insertion_codes is not None
+            else numpy.full(len(pose_for_real_atom), " ")
+        ),
+        occupancy=atom_occupancy[atom_is_real],
+        b_factor=atom_b_factor[atom_is_real],
+        split_block_mapping=split_block_mapping,
     )
-    results["occupancy"] = atom_occupancy[atom_is_real]
-    results["b"] = atom_b_factor[atom_is_real]
-
-    # virtual atoms are scoring scaffolding, not part of the structure
-    bt_atom_is_virtual = numpy.zeros((pbt.n_types, pbt.max_n_atoms), dtype=bool)
-    for i, bt in enumerate(pbt.active_block_types):
-        for name in bt.properties.virtual:
-            bt_atom_is_virtual[i, bt.atom_to_idx[name]] = True
-    keep = ~bt_atom_is_virtual[bt_for_real_atom, block_local_atom_index_for_real_atom]
-    if not keep.all():
-        results = results[keep]
-        kept_pose = pose_for_real_atom[keep]
-        first_in_pose = numpy.searchsorted(kept_pose, kept_pose)
-        results["atomi"] = numpy.arange(len(results)) - first_in_pose + 1
-
-    return results

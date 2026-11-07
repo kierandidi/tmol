@@ -91,6 +91,13 @@ policy use explicit chemical contexts and preserve custom residue identities.
 The default patched chemistry is shared; loading an explicit path creates fresh
 chemistry. Host caches do not own frontend device-stream synchronization.
 
+`tmol_core.io.atom_records` projects aligned host atom arrays into chemical and
+author identities and formats PDB atom lines. Fragment restoration uses pose and
+block ownership, so repeated author numbers cannot alias distinct ligands. The
+legacy record schema and text format remain available; extended records retain
+full labels and chemical elements until text formatting. Execution adapters
+choose their existing virtual-site policy and keep device coordinate gathering.
+
 `tmol_core.io.canonical_atom_array.prepare_canonical_atom_array` resolves prepared
 Biotite inputs into one canonical host plan: normalization, atom identities,
 metadata, supplied bonds, metal coordination and polymer gaps. Explicit termini
