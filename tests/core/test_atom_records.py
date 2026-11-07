@@ -8,7 +8,7 @@ import pytest
 from tmol_core.io.atom_records import prepare_atom_records, format_atom_line
 
 
-def projected(*, extended=False, include_virtual=False):
+def projected(*, extended=False, include_virtual=False, unused_chemistry=False):
     atom_types = [Record(name="metal", element="Zn"), Record(name="virt", element="X")]
     atoms = [
         Record(name="ZN-long", atom_type="metal"),
@@ -34,9 +34,22 @@ def projected(*, extended=False, include_virtual=False):
             )
         ]
     )
+    active_type = 0
+    if unused_chemistry:
+        # Unemitted custom chemistry need not have output element parameters.
+        unused = Record(
+            name="CUSTOM",
+            name3="CUS",
+            atoms=[Record(name="Q", atom_type="unparameterized")],
+            properties=Record(virtual=()),
+        )
+        blocks = [unused, unused, blocks[0], unused, blocks[1], unused]
+        active_type = 2
+        mapping.entries[0].orig_block_type_ind = 4
+        blocks[active_type].atoms = atoms + unused.atoms
     return prepare_atom_records(
         blocks,
-        [0, 0, 0, 0],
+        [active_type] * 4,
         [1, 1, 1, 2],
         [2, 2, 3, 3],
         [0, 1, 0, 0],
@@ -127,3 +140,14 @@ def test_empty_projection_has_the_declared_record_schema():
     assert records.shape == (0,)
     assert "element" in records.dtype.names
     assert records.dtype["x"] == np.float64
+
+
+@pytest.mark.parametrize("extended", (False, True))
+@pytest.mark.parametrize("include_virtual", (False, True))
+def test_unemitted_custom_chemistry_does_not_change_output(extended, include_virtual):
+    expected = projected(extended=extended, include_virtual=include_virtual)
+    actual = projected(
+        extended=extended, include_virtual=include_virtual, unused_chemistry=True
+    )
+    assert actual.dtype == expected.dtype
+    np.testing.assert_array_equal(actual, expected)
