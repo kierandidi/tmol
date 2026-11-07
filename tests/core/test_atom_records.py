@@ -35,6 +35,7 @@ def projected(*, extended=False, include_virtual=False, unused_chemistry=False):
         ]
     )
     active_type = 0
+    local_atoms = [0, 1, 0, 0]
     if unused_chemistry:
         # Unemitted custom chemistry need not have output element parameters.
         unused = Record(
@@ -46,13 +47,14 @@ def projected(*, extended=False, include_virtual=False, unused_chemistry=False):
         blocks = [unused, unused, blocks[0], unused, blocks[1], unused]
         active_type = 2
         mapping.entries[0].orig_block_type_ind = 4
-        blocks[active_type].atoms = atoms + unused.atoms
+        blocks[active_type].atoms = unused.atoms + atoms + unused.atoms
+        local_atoms = [1, 2, 1, 1]
     return prepare_atom_records(
         blocks,
         [active_type] * 4,
         [1, 1, 1, 2],
         [2, 2, 3, 3],
-        [0, 1, 0, 0],
+        local_atoms,
         np.array([[1.123456789123, 0, 0], [2, 0, 0], [3, 0, 0], [4, 0, 0]]),
         chain_indices=[0, 0, 1, 0],
         residue_labels=[5, 5, 5, 5],

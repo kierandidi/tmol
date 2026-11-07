@@ -82,33 +82,35 @@ def prepare_atom_records(
     if extended and atom_types is None:
         raise ValueError("Extended records require chemical atom types")
 
-    # Keep original type indices: fragment mappings refer to the full palette.
-    # Project only atoms present in the output, without padding unused chemistry.
-    names = numpy.empty(n, dtype=object)
-    virtual = numpy.zeros(n, dtype=bool)
-    elements = numpy.empty(n, dtype=object) if extended else None
-    residue_name3 = numpy.empty(n, dtype=object) if residue_names is None else None
+    # Identify unique type/atom pairs without padding or inspecting unused types.
+    # The temporary key preserves original palette indices when decoded below.
+    first_atom = int(atom_indices.min())
+    width = int(atom_indices.max()) - first_atom + 1
+    keys, inverse = numpy.unique(
+        type_indices.astype(numpy.int64) * width + atom_indices - first_atom,
+        return_inverse=True,
+    )
+    names = numpy.empty(len(keys), dtype=object)
+    virtual = numpy.zeros(len(keys), dtype=bool)
+    elements = numpy.empty(len(keys), dtype=object) if extended else None
+    residue_name3 = (
+        numpy.empty(len(keys), dtype=object) if residue_names is None else None
+    )
     element_by_type = {at.name: at.element for at in atom_types} if extended else None
-    for type_index in numpy.unique(type_indices):
-        selected = type_indices == type_index
+    for i, (type_index, atom_index) in enumerate(
+        zip(keys // width, keys % width + first_atom)
+    ):
         bt = block_types[type_index]
-        local_atoms, inverse = numpy.unique(atom_indices[selected], return_inverse=True)
-        atoms = [bt.atoms[i] for i in local_atoms]
-        atom_names = numpy.asarray([atom.name for atom in atoms], dtype=object)
-        names[selected] = atom_names[inverse]
+        atom = bt.atoms[atom_index]
+        names[i] = atom.name
         if not include_virtual:
-            virtual_names = set(bt.properties.virtual)
-            virtual[selected] = numpy.asarray(
-                [name in virtual_names for name in atom_names]
-            )[inverse]
+            virtual[i] = atom.name in bt.properties.virtual
         if extended:
-            elements[selected] = numpy.asarray(
-                [element_by_type[atom.atom_type] for atom in atoms], dtype=object
-            )[inverse]
+            elements[i] = element_by_type[atom.atom_type]
         if residue_names is None:
-            residue_name3[selected] = bt.name3
+            residue_name3[i] = bt.name3
 
-    keep = ~virtual
+    keep = ~virtual[inverse]
     poses, blocks = pose_indices[keep], block_indices[keep]
     records = numpy.empty(
         len(poses), dtype=extended_atom_record_dtype if extended else atom_record_dtype
@@ -123,11 +125,11 @@ def prepare_atom_records(
     records["atomi"] = numpy.arange(len(poses)) - numpy.searchsorted(poses, poses) + 1
     records["chain"] = numpy.asarray(chain_labels)[keep]
     records["resn"] = (
-        residue_name3[keep]
+        residue_name3[inverse[keep]]
         if residue_names is None
         else numpy.asarray(residue_names)[keep]
     )
-    records["atomn"] = names[keep]
+    records["atomn"] = names[inverse[keep]]
     for i, field in enumerate(("x", "y", "z")):
         records[field] = coords[keep, i]
     records["location"] = " " if extended else ""
@@ -135,7 +137,7 @@ def prepare_atom_records(
     records["occupancy"] = numpy.asarray(occupancy)[keep]
     records["b"] = numpy.asarray(b_factor)[keep]
     if extended:
-        records["element"] = elements[keep]
+        records["element"] = elements[inverse[keep]]
 
     if split_block_mapping is not None:
         for entry in split_block_mapping.entries:
