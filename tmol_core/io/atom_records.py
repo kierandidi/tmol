@@ -2,6 +2,8 @@
 
 import numpy
 
+from tmol_core.cache import AnnotationKey, PreparationCache
+
 from .pdb_info import DEFAULT_ATOM_OCCUPANCY, DEFAULT_ATOM_B_FACTOR
 
 atom_record_dtype = numpy.dtype(
@@ -54,6 +56,7 @@ def prepare_atom_records(
     atom_types=None,
     extended=False,
     include_virtual=False,
+    chemistry_owner=None,
 ):
     """Project aligned host atom arrays onto chemical and author identities.
 
@@ -62,6 +65,9 @@ def prepare_atom_records(
     to those rows by the execution adapter. Coordinates retain double precision
     in the records. The extended schema preserves full author labels and adds
     chemical elements; the legacy schema retains its historical fixed widths.
+    An optional packed-block-types owner reuses chemical identities only when
+    its immutable collections are supplied; coordinates and author data are
+    always read anew.
     """
     type_indices = numpy.asarray(type_indices)
     pose_indices = numpy.asarray(pose_indices)
@@ -95,25 +101,56 @@ def prepare_atom_records(
         - first_atom,
         return_inverse=True,
     )
-    names = numpy.empty(len(keys), dtype=object)
-    virtual = numpy.zeros(len(keys), dtype=bool)
-    elements = numpy.empty(len(keys), dtype=object) if extended else None
-    residue_name3 = (
-        numpy.empty(len(keys), dtype=object) if residue_names is None else None
-    )
-    element_by_type = {at.name: at.element for at in atom_types} if extended else None
-    for i, (type_index, atom_index) in enumerate(
-        zip(keys // width, keys % width + first_atom)
+
+    def chemical_identities():
+        names = numpy.empty(len(keys), dtype=object)
+        virtual = numpy.zeros(len(keys), dtype=bool)
+        elements = numpy.empty(len(keys), dtype=object) if extended else None
+        residue_name3 = (
+            numpy.empty(len(keys), dtype=object) if residue_names is None else None
+        )
+        element_by_type = (
+            {at.name: at.element for at in atom_types} if extended else None
+        )
+        for i, (type_index, atom_index) in enumerate(
+            zip(keys // width, keys % width + first_atom)
+        ):
+            bt = block_types[type_index]
+            atom = bt.atoms[atom_index]
+            names[i] = atom.name
+            if not include_virtual:
+                virtual[i] = atom.name in bt.properties.virtual
+            if extended:
+                elements[i] = element_by_type[atom.atom_type]
+            if residue_names is None:
+                residue_name3[i] = bt.name3
+        return names, virtual, elements, residue_name3
+
+    chem_db = getattr(chemistry_owner, "chem_db", None)
+    if (
+        chem_db is not None
+        and block_types is chemistry_owner.active_block_types
+        and (not extended or atom_types is chem_db.atom_types)
     ):
-        bt = block_types[type_index]
-        atom = bt.atoms[atom_index]
-        names[i] = atom.name
-        if not include_virtual:
-            virtual[i] = atom.name in bt.properties.virtual
-        if extended:
-            elements[i] = element_by_type[atom.atom_type]
-        if residue_names is None:
-            residue_name3[i] = bt.name3
+        cache = getattr(chemistry_owner, "_export_preparations", None)
+        if cache is None:
+            cache = chemistry_owner._export_preparations = PreparationCache()
+        key = AnnotationKey.from_sources(
+            chem_db,
+            settings=(
+                keys.tobytes(),
+                first_atom,
+                width,
+                extended,
+                include_virtual,
+                residue_names is None,
+            ),
+        )
+        names, virtual, elements, residue_name3 = cache.get_or_create(
+            "pdb_atoms", key, chemical_identities
+        )
+    else:
+        names, virtual, elements, residue_name3 = chemical_identities()
 
     keep = ~virtual[inverse]
     poses, blocks = pose_indices[keep], block_indices[keep]

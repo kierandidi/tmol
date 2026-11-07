@@ -97,6 +97,9 @@ block ownership, so repeated author numbers cannot alias distinct ligands. The
 legacy record schema and text format remain available; extended records retain
 full labels and chemical elements until text formatting. Execution adapters
 choose their existing virtual-site policy and keep device coordinate gathering.
+An optional `chemistry_owner` reuses only emitted chemical identities on the
+packed-block-types owner, guarded by its immutable collection identities.
+Coordinates, author labels and fragment restoration are never cached.
 
 `tmol_core.io.canonical_atom_array.prepare_canonical_atom_array` resolves prepared
 Biotite inputs into one canonical host plan: normalization, atom identities,

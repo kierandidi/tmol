@@ -245,4 +245,5 @@ def _atom_records_from_coords(
         occupancy=atom_occupancy[atom_is_real],
         b_factor=atom_b_factor[atom_is_real],
         split_block_mapping=split_block_mapping,
+        chemistry_owner=pbt,
     )
