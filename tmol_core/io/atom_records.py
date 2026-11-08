@@ -1,6 +1,7 @@
 """Chemical atom records and PDB atom formatting, independent of execution."""
 
 from dataclasses import dataclass
+from functools import lru_cache
 
 import numpy
 
@@ -341,6 +342,7 @@ def prepare_atom_records(
     )
 
 
+@lru_cache(maxsize=256)
 def format_atom_name(name, *, strip=False):
     if strip:
         name = name.strip()
