@@ -9,7 +9,12 @@ from tmol_core.io.atom_records import prepare_atom_records, format_atom_line
 
 
 def projected(
-    *, extended=False, include_virtual=False, unused_chemistry=False, index_dtype=None
+    *,
+    extended=False,
+    include_virtual=False,
+    unused_chemistry=False,
+    index_dtype=None,
+    prepare=prepare_atom_records,
 ):
     atom_types = [Record(name="metal", element="Zn"), Record(name="virt", element="X")]
     atoms = [
@@ -51,7 +56,7 @@ def projected(
         mapping.entries[0].orig_block_type_ind = 4
         blocks[active_type].atoms = unused.atoms + atoms + unused.atoms
         local_atoms = [1, 2, 1, 1]
-    return prepare_atom_records(
+    return prepare(
         blocks,
         np.asarray([active_type] * 4, dtype=index_dtype),
         [1, 1, 1, 2],
@@ -435,3 +440,66 @@ def test_owned_projection_invalidates_replaced_chemical_collections():
     np.testing.assert_array_equal(actual["element"], ["Cu", "Cu"])
     np.testing.assert_array_equal(original["atomn"], ["ZN", "ZN"])
     np.testing.assert_array_equal(original["element"], ["Zn", "Zn"])
+
+
+@pytest.mark.parametrize("extended", (False, True))
+@pytest.mark.parametrize("include_virtual", (False, True))
+def test_dictionary_records_preserve_schema_values_and_fragment_labels(
+    extended, include_virtual
+):
+    from tmol_core.io.atom_records import prepare_atom_record_plan
+
+    def dictionaries(blocks, types, poses, residues, atoms, coords, **metadata):
+        policy = {
+            name: metadata.pop(name)
+            for name in ("atom_types", "extended", "include_virtual")
+        }
+        plan = prepare_atom_record_plan(blocks, types, poses, residues, atoms, **policy)
+        first = plan.record_dicts(coords, **metadata)
+        snapshot = [dict(row) for row in first]
+        coords[:] += 1
+        metadata["occupancy"][0] = 0.75
+        changed = plan.record_dicts(coords, **metadata)
+        assert first == snapshot
+        assert changed[0]["x"] == snapshot[0]["x"] + 1
+        assert changed[0]["occupancy"] == 0.75
+        changed[0]["atomn"] = "changed"
+        assert plan.record_dicts(coords, **metadata)[0]["atomn"] == first[0]["atomn"]
+        return first
+
+    options = dict(
+        extended=extended, include_virtual=include_virtual, unused_chemistry=True
+    )
+    records = projected(**options)
+    expected = [dict(zip(records.dtype.names, row)) for row in records.tolist()]
+    actual = projected(**options, prepare=dictionaries)
+    assert actual == expected
+    assert [[type(v) for v in row.values()] for row in actual] == [
+        [type(v) for v in row.values()] for row in expected
+    ]
+
+
+def test_dictionary_records_empty_selection_and_live_validation():
+    from tmol_core.io.atom_records import prepare_atom_record_plan
+
+    metadata = dict(
+        chain_indices=[],
+        residue_labels=[],
+        chain_labels=[],
+        insertion_codes=[],
+        occupancy=[],
+        b_factor=[],
+    )
+    empty = prepare_atom_record_plan([], [], [], [], [], extended=True)
+    assert empty.record_dicts(np.empty((0, 3)), **metadata) == []
+    with pytest.raises(ValueError, match="same rows"):
+        empty.record_dicts(np.zeros((1, 3)), **metadata)
+    block = Record(
+        name3="VRT",
+        atoms=[Record(name="V", atom_type="virt")],
+        properties=Record(virtual=("V",)),
+    )
+    filtered = prepare_atom_record_plan([block], [0], [0], [0], [0])
+    assert (
+        filtered.record_dicts(np.zeros((1, 3)), **{key: [0] for key in metadata}) == []
+    )

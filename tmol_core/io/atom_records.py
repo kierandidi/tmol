@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from functools import lru_cache
+from itertools import repeat
 
 import numpy
 
@@ -80,7 +81,37 @@ class AtomRecordPlan:
     _residue_names: object
     _extended: bool
 
-    def records(
+    @property
+    def _dtype(self):
+        return extended_atom_record_dtype if self._extended else atom_record_dtype
+
+    def records(self, coords, **metadata):
+        """Materialize independent structured records with live metadata."""
+        values = self._record_values(coords, **metadata)
+        result = numpy.empty(len(self._poses), dtype=self._dtype)
+        for field, value in values.items():
+            result[field] = value
+        return result
+
+    def record_dicts(self, coords, **metadata):
+        """Materialize the same fields and Python values directly as dictionaries."""
+        values = self._record_values(coords, **metadata)
+        if not values:
+            return []
+        names = self._dtype.names
+        columns = []
+        n = len(self._poses)
+        for name in names:
+            column = numpy.asarray(values[name], dtype=self._dtype[name])
+            if column.ndim == 0:
+                columns.append(repeat(column.item(), n))
+            else:
+                if column.shape != (n,):
+                    column = numpy.broadcast_to(column, (n,))
+                columns.append(column.tolist())
+        return [dict(zip(names, row)) for row in zip(*columns)]
+
+    def _record_values(
         self,
         coords,
         *,
@@ -98,19 +129,11 @@ class AtomRecordPlan:
         if coords.shape != (self._n_input, 3):
             raise ValueError("Atom indices and coordinates must describe the same rows")
         if self._n_input == 0:
-            return numpy.empty(
-                0,
-                dtype=(
-                    extended_atom_record_dtype if self._extended else atom_record_dtype
-                ),
-            )
+            return {}
         if residue_names is None and self._residue_names is None:
             raise ValueError("This atom record plan requires residue names")
         keep, poses, blocks = self._keep, self._poses, self._blocks
-        records = numpy.empty(
-            len(poses),
-            dtype=extended_atom_record_dtype if self._extended else atom_record_dtype,
-        )
+        records = {}
         records["record_name"] = (
             "ATOM  " if record_names is None else numpy.asarray(record_names)[keep]
         )
@@ -136,6 +159,12 @@ class AtomRecordPlan:
             records["element"] = self._elements
 
         if split_block_mapping is not None:
+            # Fragment overrides must neither mutate caller metadata nor narrow
+            # extended author labels to the input array's string width.
+            for field in ("resn", "resi", "chain", "insert"):
+                records[field] = numpy.array(
+                    records[field], dtype=self._dtype[field], copy=True
+                )
             for entry in split_block_mapping.entries:
                 # Author numbering can repeat across chains and distinct ligands.
                 selected = (poses == entry.pose_ind) & (blocks == entry.block_ind)
