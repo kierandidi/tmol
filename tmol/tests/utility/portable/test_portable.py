@@ -377,3 +377,12 @@ def test_native_armijo_without_torch(tmp_path):
     assert proc.returncode == 0, proc.stdout + proc.stderr
     run = subprocess.run([str(tmp_path / "armijo")], capture_output=True, text=True)
     assert run.returncode == 0, run.stdout + run.stderr
+
+
+@requires_cxx
+def test_native_spline_degrees_match_cardinal_basis(tmp_path):
+    binary = tmp_path / "spline_degrees"
+    compiled = _compile(HERE / "native_spline_degrees.cc", binary, run=True)
+    assert compiled.returncode == 0, compiled.stderr
+    result = subprocess.run([str(binary)], capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr

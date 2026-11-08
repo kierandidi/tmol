@@ -53,7 +53,7 @@ struct ndspline_kernel {
         Real t = (1.0 / 6.0) * square(frac[dim]);
         Real t0 = frac[dim] * (t - 11.0 / 24.0);
         Real t1 = 19.0 / 96.0 + square(frac[dim]) * (1.0 / 4.0 - t);
-        wts(dim, 0) = (1.0 / 24.0) * cube(1.0 / 2.0 - frac[dim]);
+        wts(dim, 0) = (1.0 / 24.0) * square(square(1.0 / 2.0 - frac[dim]));
         wts(dim, 1) = t1 + t0;
         wts(dim, 3) = t1 - t0;
         wts(dim, 4) = wts(dim, 0) + t0 + (1.0 / 2.0) * frac[dim];
@@ -62,20 +62,16 @@ struct ndspline_kernel {
       }
     } else if (DEGREE == 5) {
       for (int dim = 0; dim < NDIM; ++dim) {
-        Real w2 = frac[dim] * frac[dim];
-        wts(dim, 5) = (1.0 / 120.0) * cube(frac[dim]) * square(frac[dim]);
-        Real w4 = square(square(frac[dim]) - frac[dim]);
-        Real w = frac[dim] - 0.5;
-        Real t = w2 * (w2 - 3.0);
-        wts(dim, 0) = (1.0 / 24.0) * (1.0 / 5.0 + w2 + w4) - wts(dim, 5);
-        Real t0 = (1.0 / 24.0) * (w2 * (w2 - 5.0) + 46.0 / 5.0);
-        Real t1 = (-1.0 / 12.0) * w * (t + 4.0);
-        wts(dim, 2) = t0 + t1;
-        wts(dim, 3) = t0 - t1;
-        t0 = (1.0 / 16.0) * (9.0 / 5.0 - t);
-        t1 = (1.0 / 24.0) * w * (w4 - w2 - 5.0);
-        wts(dim, 1) = t0 + t1;
-        wts(dim, 4) = t0 - t1;
+        // Cardinal quintic polynomials in reflected pairs; Horner form avoids
+        // cancellation between large truncated powers near support boundaries.
+        for (int side = 0; side < 2; ++side) {
+          Real x = side ? 1 - frac[dim] : frac[dim];
+          wts(dim, 5 * (1 - side)) = square(x) * cube(x) / 120;
+          wts(dim, 1 + 3 * side) =
+              (26 + x * (-50 + x * (20 + x * (20 + x * (-20 + 5 * x))))) / 120;
+          wts(dim, 2 + side) =
+              (66 + square(x) * (-60 + square(x) * (30 - 10 * x))) / 120;
+        }
       }
     }
 
@@ -108,7 +104,7 @@ struct ndspline_kernel {
         Real dt = (1.0 / 3.0) * frac[dim];
         Real dt0 = (t - 11.0 / 24.0) + frac[dim] * dt;
         Real dt1 = 2.0 * frac[dim] * (1.0 / 4.0 - t) - square(frac[dim]) * dt;
-        dwts(dim, 0) = -(1.0 / 8.0) * square(1.0 / 2.0 - frac[dim]);
+        dwts(dim, 0) = -(1.0 / 6.0) * cube(1.0 / 2.0 - frac[dim]);
         dwts(dim, 1) = dt1 + dt0;
         dwts(dim, 3) = dt1 - dt0;
         dwts(dim, 4) = dwts(dim, 0) + dt0 + (1.0 / 2.0);
@@ -117,23 +113,15 @@ struct ndspline_kernel {
       }
     } else if (DEGREE == 5) {
       for (int dim = 0; dim < NDIM; ++dim) {
-        Real w2 = frac[dim] * frac[dim];
-        dwts(dim, 5) = (1.0 / 24.0) * square(square(frac[dim]));
-        Real w4 = square(square(frac[dim]) - frac[dim]);
-        Real dw4 =
-            2.0 * (square(frac[dim]) - frac[dim]) * (2.0 * frac[dim] - 1.0);
-        Real w = frac[dim] - 0.5;
-        Real t = w2 * (w2 - 3.0);
-        Real dt = 4.0 * cube(frac[dim]) - 6.0 * frac[dim];
-        dwts(dim, 0) = (1.0 / 24.0) * (2.0 * frac[dim] + dw4) - dwts(dim, 5);
-        Real dt0 = (1.0 / 24.0) * (4.0 * cube(frac[dim]) - 10.0 * frac[dim]);
-        Real dt1 = (-1.0 / 12.0) * (w * dt + (t + 4.0));
-        dwts(dim, 2) = dt0 + dt1;
-        dwts(dim, 3) = dt0 - dt1;
-        dt0 = -(1.0 / 16.0) * dt;
-        dt1 = (1.0 / 24.0) * ((w4 - w2 - 5.0) + w * (dw4 - 2 * frac[dim]));
-        dwts(dim, 1) = dt0 + dt1;
-        dwts(dim, 4) = dt0 - dt1;
+        for (int side = 0; side < 2; ++side) {
+          Real x = side ? 1 - frac[dim] : frac[dim];
+          Real sign = side ? -1 : 1;
+          dwts(dim, 5 * (1 - side)) = sign * square(square(x)) / 24;
+          dwts(dim, 1 + 3 * side) =
+              sign * (-50 + x * (40 + x * (60 + x * (-80 + 25 * x)))) / 120;
+          dwts(dim, 2 + side) =
+              sign * x * (-120 + square(x) * (120 - 50 * x)) / 120;
+        }
       }
     }
     return dwts;
@@ -150,7 +138,10 @@ struct ndspline_kernel {
     RealN frac;
 
     for (int dim = 0; dim < NDIM; ++dim) {
-      idx[dim] = (Int)std::floor(X[dim]);
+      if constexpr (DEGREE % 2 == 0)
+        idx[dim] = (Int)std::floor(X[dim] + Real(0.5));
+      else
+        idx[dim] = (Int)std::floor(X[dim]);
       frac[dim] = X[dim] - idx[dim];
       idx[dim] -= (DEGREE / 2);
       nprods *= (DEGREE + 1);
@@ -197,7 +188,10 @@ struct ndspline_kernel {
     RealN dweight;
 
     for (int dim = 0; dim < NDIM; ++dim) {
-      idx[dim] = (Int)std::floor(X[dim]);
+      if constexpr (DEGREE % 2 == 0)
+        idx[dim] = (Int)std::floor(X[dim] + Real(0.5));
+      else
+        idx[dim] = (Int)std::floor(X[dim]);
       frac[dim] = X[dim] - idx[dim];
       idx[dim] -= (DEGREE / 2);
       nprods *= (DEGREE + 1);
