@@ -152,7 +152,9 @@ def prepare_atom_records(
     else:
         names, virtual, elements, residue_name3 = chemical_identities()
 
-    keep = ~virtual[inverse]
+    # Preserve views when every input row is emitted; fields are copied into the
+    # independently owned output records below.
+    keep = slice(None) if include_virtual or not virtual.any() else ~virtual[inverse]
     poses, blocks = pose_indices[keep], block_indices[keep]
     records = numpy.empty(
         len(poses), dtype=extended_atom_record_dtype if extended else atom_record_dtype
