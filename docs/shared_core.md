@@ -100,6 +100,10 @@ choose their existing virtual-site policy and keep device coordinate gathering.
 An optional `chemistry_owner` reuses only emitted chemical identities on the
 packed-block-types owner, guarded by its immutable collection identities.
 Coordinates, author labels and fragment restoration are never cached.
+`prepare_atom_record_plan` also prepares selection indices and virtual filtering
+for immutable topology; `plan.records` reads fresh coordinates and author data.
+Reuse requires unchanged chemical sources, selection and output policy. Mutable
+callers retain the checked `prepare_atom_records` entry point.
 
 `tmol_core.io.canonical_atom_array.prepare_canonical_atom_array` resolves prepared
 Biotite inputs into one canonical host plan: normalization, atom identities,

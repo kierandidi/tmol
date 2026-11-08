@@ -304,3 +304,100 @@ def test_owned_projection_respects_policies_subsets_and_source_identity():
         prepare_atom_records(*args, **kwargs, chemistry_owner=owner),
         prepare_atom_records(*args, **kwargs),
     )
+
+
+def test_prepared_records_keep_selection_but_read_coordinates_and_metadata_anew():
+    from tmol_core.io.atom_records import prepare_atom_record_plan
+
+    atoms = [Record(name="ZN", atom_type="metal"), Record(name="VRT", atom_type="virt")]
+    types = (
+        Record(
+            name="FRA", name3="FRA", atoms=atoms, properties=Record(virtual=("VRT",))
+        ),
+        Record(
+            name="Original", name3="ORI", atoms=atoms, properties=Record(virtual=())
+        ),
+    )
+    poses, blocks = np.array([0, 0, 1]), np.array([2, 2, 3])
+    plan = prepare_atom_record_plan(
+        types,
+        np.zeros(3, np.uint32),
+        poses,
+        blocks,
+        np.array([0, 1, 0], np.uint32),
+        atom_types=(
+            Record(name="metal", element="Zn"),
+            Record(name="virt", element="X"),
+        ),
+        extended=True,
+    )
+    # A prepared selection owns its indices; later changes require a new plan.
+    poses[:] = 9
+    blocks[:] = 8
+    xyz = np.array([[1.123456789123, 2, 3], [9, 9, 9], [4, 5, 6]])
+    metadata = dict(
+        chain_indices=[0, 0, 0],
+        residue_labels=[-3, -3, 7],
+        chain_labels=["author-A", "author-A", "author-B"],
+        insertion_codes=["AB", "AB", ""],
+        occupancy=[0.5, 0.5, 0.8],
+        b_factor=[12, 12, 17],
+    )
+    first = plan.records(xyz, **metadata)
+    saved = first.copy()
+    np.testing.assert_array_equal(first["modeli"], [0, 1])
+    np.testing.assert_array_equal(first["atomi"], [1, 1])
+    np.testing.assert_array_equal(first["atomn"], ["ZN", "ZN"])
+    assert first["x"][0] == xyz[0, 0] and first["insert"][0] == "AB"
+    xyz += 2
+    metadata["occupancy"][0] = 0.75
+    metadata["residue_labels"][0] = -9
+    mapping = Record(
+        entries=[
+            Record(
+                pose_ind=1,
+                block_ind=3,
+                orig_block_type_ind=1,
+                orig_residue_label=-17,
+                orig_chain_label="original-chain",
+                orig_ins_code="CD",
+            )
+        ]
+    )
+    second = plan.records(xyz, **metadata, split_block_mapping=mapping)
+    np.testing.assert_array_equal(second["resi"], [-9, -17])
+    assert second["resn"][1] == "Ori" and second["chain"][1] == "original-chain"
+    assert second["insert"][1] == "CD" and second["occupancy"][0] == 0.75
+    np.testing.assert_array_equal(second["x"], xyz[[0, 2], 0])
+    np.testing.assert_array_equal(first, saved)
+    second["atomn"] = "changed"
+    np.testing.assert_array_equal(plan.records(xyz, **metadata)["atomn"], ["ZN", "ZN"])
+
+
+def test_prepared_records_validate_supplied_names_and_referenced_elements():
+    from tmol_core.io.atom_records import prepare_atom_record_plan
+
+    # A supplied author name does not require a type's fallback name3.
+    block = Record(
+        atoms=[Record(name="Q", atom_type="custom")], properties=Record(virtual=())
+    )
+    args = ([block], [0], [0], [0], [0])
+    with pytest.raises(KeyError):
+        prepare_atom_record_plan(
+            *args, extended=True, atom_types=[], default_residue_names=False
+        )
+    plan = prepare_atom_record_plan(*args, default_residue_names=False)
+    metadata = dict(
+        chain_indices=[0],
+        residue_labels=[-1],
+        chain_labels=["A"],
+        insertion_codes=[""],
+        occupancy=[1],
+        b_factor=[30],
+    )
+    with pytest.raises(ValueError, match="requires residue names"):
+        plan.records(np.zeros((1, 3)), **metadata)
+    with pytest.raises(ValueError, match="same rows"):
+        plan.records(np.zeros((2, 3)), **metadata, residue_names=["CUS"])
+    result = plan.records(np.zeros((1, 3)), **metadata, residue_names=["CUS"])
+    assert result["resn"][0] == "CUS" and result["resi"][0] == -1
