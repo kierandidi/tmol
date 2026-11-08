@@ -38,6 +38,21 @@ extended_atom_record_dtype = numpy.dtype(
 )
 
 
+@dataclass(frozen=True, slots=True, eq=False)
+class _ChemicalRecordKey:
+    source: AnnotationKey
+    block_types: object
+    atom_types: object
+
+    def matches(self, other):
+        return (
+            isinstance(other, _ChemicalRecordKey)
+            and self.block_types is other.block_types
+            and self.atom_types is other.atom_types
+            and self.source.matches(other.source)
+        )
+
+
 def _readonly(values):
     result = numpy.array(values, copy=True)
     result.flags.writeable = False
@@ -237,6 +252,9 @@ def prepare_atom_record_plan(
                 default_residue_names,
             ),
         )
+        # Collections may be replaced on a live owner/database. Retain exact
+        # referents so replacements invalidate without relying on recycled ids.
+        key = _ChemicalRecordKey(key, block_types, atom_types if extended else None)
         names, virtual, elements, residue_name3 = cache.get_or_create(
             "pdb_atoms", key, chemical_identities
         )

@@ -401,3 +401,37 @@ def test_prepared_records_validate_supplied_names_and_referenced_elements():
         plan.records(np.zeros((2, 3)), **metadata, residue_names=["CUS"])
     result = plan.records(np.zeros((1, 3)), **metadata, residue_names=["CUS"])
     assert result["resn"][0] == "CUS" and result["resi"][0] == -1
+
+
+def test_owned_projection_invalidates_replaced_chemical_collections():
+    owner, args, kwargs, _ = owned_projection()
+    original = prepare_atom_records(*args, **kwargs, chemistry_owner=owner)
+    old_type = owner.active_block_types[1]
+    owner.active_block_types = [
+        None,
+        Record(
+            name="COPPER",
+            name3="COP",
+            atoms=[
+                Record(name="CU", atom_type="metal"),
+                Record(name="VRT", atom_type="virt"),
+            ],
+            properties=old_type.properties,
+        ),
+    ]
+    args[0] = owner.active_block_types
+    actual = prepare_atom_records(*args, **kwargs, chemistry_owner=owner)
+    np.testing.assert_array_equal(actual, prepare_atom_records(*args, **kwargs))
+    np.testing.assert_array_equal(actual["atomn"], ["CU", "CU"])
+    np.testing.assert_array_equal(actual["resn"], ["COP", "COP"])
+    # The chemical database itself is unchanged; its collection is replaced.
+    owner.chem_db.atom_types = [
+        Record(name="metal", element="Cu"),
+        Record(name="virt", element="X"),
+    ]
+    kwargs["atom_types"] = owner.chem_db.atom_types
+    actual = prepare_atom_records(*args, **kwargs, chemistry_owner=owner)
+    np.testing.assert_array_equal(actual, prepare_atom_records(*args, **kwargs))
+    np.testing.assert_array_equal(actual["element"], ["Cu", "Cu"])
+    np.testing.assert_array_equal(original["atomn"], ["ZN", "ZN"])
+    np.testing.assert_array_equal(original["element"], ["Zn", "Zn"])
