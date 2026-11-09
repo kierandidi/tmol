@@ -9,7 +9,7 @@ import numpy as np
 from tmol_core.relax import (
     fast_relax as _shared_fast_relax,
     default_task_operation,
-    KINEMATIC_RELAX_LBFGS_OPTIONS,
+    kinematic_relax_options,
 )
 from tmol_jax.pack import (
     PackerTask,
@@ -60,13 +60,25 @@ class KinematicRelaxMinimizer:
     """JAX torsion/jump execution of the shared kinematic relax policy.
 
     Extra options pass to ``run_kin_min``. Stage ``rtol`` and shared convergence
-    defaults apply to Armijo and callable optimizers. Explicit strong-Wolfe uses
-    its own ``gtol``/``ftol`` settings without adding Armijo options.
+    defaults apply to Armijo and callable optimizers. ``policy="staged"`` keeps
+    stage tolerances; ``"legacy"`` selects pre-PR626 convergence and history.
+    Torch defaults to legacy, so matched runs must select the same policy.
+    Explicit strong-Wolfe keeps its own settings under either policy.
     """
 
-    def __init__(self, move_map=None, fold_forest=None, *, cuda_graph=None, **options):
+    def __init__(
+        self,
+        move_map=None,
+        fold_forest=None,
+        *,
+        cuda_graph=None,
+        policy="staged",
+        **options,
+    ):
         if move_map is not None and not isinstance(move_map, MoveMap):
             raise TypeError("KinematicRelaxMinimizer needs a MoveMap")
+        kinematic_relax_options(policy)
+        self.policy = policy
         self.cuda_graph = cuda_graph
         self.move_map = move_map
         self.fold_forest = fold_forest
@@ -84,11 +96,13 @@ class KinematicRelaxMinimizer:
             fold_forest = FoldForest.reasonable_fold_forest(pose)
         options = dict(self.options)
         if options.get("optimizer", "armijo") != "strong_wolfe":
-            convergence = dict(KINEMATIC_RELAX_LBFGS_OPTIONS)
-            convergence.update(options.pop("optimizer_kwargs", {}) or {})
-            if rtol is not None:
-                convergence["rtol"] = rtol
-            options["optimizer_kwargs"] = convergence
+            overrides = {}
+            if options.get("history") is not None:
+                overrides["history_size"] = options["history"]
+            overrides.update(options.pop("optimizer_kwargs", {}) or {})
+            options["optimizer_kwargs"] = kinematic_relax_options(
+                self.policy, rtol, overrides=overrides
+            )
         return run_kin_min(
             pose,
             sfxn,

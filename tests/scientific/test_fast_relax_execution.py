@@ -48,6 +48,60 @@ def test_relax_minimizers_preserve_fixed_molecular_coordinates(backend, monkeypa
                 kinematic, cuda_graph=False, optimizer=optimizer
             )(pose, b.score_function, rtol=5e-4)
             np.testing.assert_array_equal(b.numpy(result.coords), original)
+        with pytest.raises(ValueError, match="policy"):
+            api.KinematicRelaxMinimizer(policy="unknown")
+
+        # Observe the actual optimizer call on movable noncanonical torsions.
+        # One iteration suffices for this option/adapter contract; full workflow
+        # convergence is checked independently with the unchanged default budget.
+        moving = api.MoveMap.from_pose_stack(pose)
+        moving.move_all_sc = True
+        observed = []
+
+        def recorded_optimizer(objective, initial, **settings):
+            observed.append(settings.copy())
+            return armijo_minimize(objective, initial, **settings)
+
+        for policy in ("legacy", "staged"):
+            minimizer = api.KinematicRelaxMinimizer(
+                moving, policy=policy, optimizer=recorded_optimizer, max_iter=1
+            )
+            for rtol in (0.01, 0.01, 0.01, 5e-4):
+                result = minimizer(pose, b.score_function, rtol=rtol)
+                settings = observed[-1]
+                assert settings["rtol"] == (None if policy == "legacy" else rtol)
+                assert settings["atol"] == (0.01 if policy == "legacy" else None)
+                assert settings["patience"] == (5 if policy == "legacy" else 1)
+                assert settings["gradtol"] == (
+                    None if policy == "legacy" else 180.0 / np.pi
+                )
+                if policy == "legacy":
+                    assert settings["history_size"] == 128
+                else:
+                    assert "history_size" not in settings
+                assert np.isfinite(b.numpy(result.coords)).all()
+                assert result.coords.dtype == pose.coords.dtype
+                assert result.coords.device == pose.coords.device
+            for extra, expected_history in (({}, 7), ({"history_size": 9}, 9)):
+                options = {"rtol": 0.002, **extra}
+                api.KinematicRelaxMinimizer(
+                    moving,
+                    policy=policy,
+                    history=7,
+                    optimizer=recorded_optimizer,
+                    optimizer_kwargs=options,
+                    max_iter=1,
+                )(pose, b.score_function, rtol=5e-4)
+                assert observed[-1]["history_size"] == expected_history
+                assert observed[-1]["rtol"] == (0.002 if policy == "legacy" else 5e-4)
+                assert options == {"rtol": 0.002, **extra}
+            result = api.KinematicRelaxMinimizer(
+                kinematic, policy=policy, optimizer="strong_wolfe"
+            )(pose, b.score_function, rtol=5e-4)
+            np.testing.assert_array_equal(b.numpy(result.coords), original)
+        assert len(observed) == 12
+        np.testing.assert_array_equal(b.coords(), original)
+
         for constructor in (api.CartesianRelaxMinimizer, api.KinematicRelaxMinimizer):
             if b.device.platform != "gpu":
                 with pytest.raises(ValueError, match="requires a CUDA pose"):

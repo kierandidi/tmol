@@ -245,6 +245,15 @@ different endpoints. Float32 CUDA Cartesian minimization of ubiquitin also
 failed repeated-endpoint checks; the cause remains unresolved. End-to-end
 runtime and peak-memory parity are not established.
 
+`KinematicRelaxMinimizer(policy="staged")` retains the JAX default stage-based
+convergence. Explicit `policy="legacy"` selects pre-PR626 history and convergence
+settings and ignores schedule tolerances. Torch defaults to `"legacy"`; choose
+the same policy for matched comparisons. Explicit history and optimizer settings
+remain configurable; stage tolerances take precedence only for `"staged"`.
+Strong-Wolfe keeps its own settings under either policy. These selectable
+policies do not establish matching default workflows or resolve the recorded
+canonical and Metal repeat failures without final-source validation.
+
 `CartesianMoveMap(coord_mask=mask)` carries an atom movement mask for Cartesian
 relax callbacks. `run_cart_min(..., coord_mask=mask)` accepts the mature keyword;
 `move_mask` remains available. Supply only one non-None mask.
