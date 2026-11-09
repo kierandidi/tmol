@@ -83,7 +83,7 @@ def test_complete_rotamer_score_conserves_whole_pose(backend, name, dtype):
 
         if name == "mixed_batch" and dtype == np.float64:
             weights = {
-                st: backend.score_function.get_weight(st)
+                st: float(backend.score_function.get_weight(st))
                 for st in backend.score_function.all_score_types()
             }
             for factor in (0.5, 2.0):
