@@ -66,12 +66,6 @@ def _reference(coords, state):
     return values[None, :].astype(coords.dtype), indices
 
 
-def _prepared_scores(evaluate, shape, coords, arrays, candidates):
-    if coords.shape != shape:
-        raise ValueError(f"expected coordinates with shape {shape}")
-    return evaluate(coords, arrays, candidates)
-
-
 @partial(jax.jit, static_argnums=(0,))
 def _packing_entry_indices(evaluate, coords, arrays):
     # Keep the existing term's identity construction. XLA can discard its
@@ -187,11 +181,7 @@ class RotamerScorer:
                 for *_, state, spatial in self.entries
             )
         return partial(
-            _prepared_scores,
-            self._evaluate,
-            self.shape,
-            arrays=self._arrays,
-            candidates=tuple(prepared_indices),
+            self._evaluate, arrays=self._arrays, candidates=tuple(prepared_indices)
         )
 
     def _compiled_evaluator(self, entries, *, paged=False):
@@ -221,6 +211,7 @@ class RotamerScorer:
                 positions,
                 self.sum_terms,
                 self.apply_weights,
+                self.shape,
             ),
             arrays,
         )
@@ -302,13 +293,14 @@ def _compiled_rotamer_execution(
     positions,
     sum_terms,
     apply_weights,
+    shape,
 ):
-    """Reuse programs across renders; all topology and parameter arrays are operands."""
+    """Reuse programs per coordinate shape; numeric parameters remain operands."""
 
     @jax.jit
     def score(x, arrays, candidates):
-        if x.dtype not in (jnp.float32, jnp.float64):
-            raise ValueError("expected float32/64 coordinates")
+        if x.shape != shape or x.dtype not in (jnp.float32, jnp.float64):
+            raise ValueError(f"expected float32/64 coordinates with shape {shape}")
         state_leaves = list(template)
         for i, value in zip(positions, arrays):
             state_leaves[i] = value

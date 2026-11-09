@@ -66,8 +66,7 @@ def test_packing_bounds_mixed_pose_batches(backend, monkeypatch, bump):
             # An extra enclosing jit embeds those tables as constants instead, changing
             # the storage contract. Native scratch is an explicit FFI result.
             evaluate = scorer.prepare(rotamers.coords)
-            # Compile the same executor called after prepared shape validation.
-            executable = scorer._evaluate.lower(
+            executable = evaluate.func.lower(
                 rotamers.coords, **evaluate.keywords
             ).compile()
             memory = executable.memory_analysis()
