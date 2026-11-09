@@ -101,11 +101,21 @@ during preparation. See the capability matrix for tested domains and open gaps.
 Shared native CUDA accumulators now keep hydrogen-bond gradients and generic
 torsion values/gradients in wider storage before returning the caller dtype.
 Full-default float32 Cartesian and kinematic minimization and FastRelax pass
-cold-plus-five-warm repeat checks for the tested branched N-glycan in both
+cold-plus-five-warm CUDA repeat checks for the tested branched N-glycan in both
 frontends, including full chemical records. Original failures remain recorded.
 Generated glycan ideal coordinates and starting hydrogen positions still differ
 between frontends. Historical optimized endpoints, complete cold/warm runtime
 and physical peak-memory parity remain open.
+
+Repeatability is not general: a four-residue canonical CUDA kinematic FastRelax
+case still exceeds its original coordinate and gradient repeat bounds. Its first
+observed divergence is in final-stage packing; identical rotamers can yield
+different interaction-graph energies and alanine selections. The underlying
+scoring or accumulation cause remains unresolved. Actual Torch/Metal N-glycan
+kinematic FastRelax also retains a public-default repeat failure. A private
+control restoring the five pre-PR626 convergence/history settings reproduces
+the tested historical result; it does not qualify a production repair or a
+single-setting explanation. Native JAX MPS is not supported.
 
 Standalone LJ/LK float32 CUDA gradients now use the shared native wider
 accumulator, then convert once to the coordinate dtype. The original lifecycle
