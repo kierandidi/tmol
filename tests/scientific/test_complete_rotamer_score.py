@@ -12,17 +12,21 @@ from .rotamer_execution import RotamerExecution
 def complete_rotamer_scorer(backend, *, sampled=False):
     execution = RotamerExecution(backend, family="genbonded", sampled=sampled)
     backend.use_beta2016()
+    return execution, _prepare_complete_score(backend, execution)
+
+
+def _prepare_complete_score(backend, execution):
     scorer = backend.score_function.render_rotamer_scoring_module(
         backend.pose, execution.rotamers
     )
     if backend.framework == "jax":
-        return execution, scorer.prepare(execution.rotamers.coords)
+        return scorer.prepare(execution.rotamers.coords)
 
     def evaluate(coords):
         result = scorer(coords).coalesce()
         return result.values(), result.indices()
 
-    return execution, evaluate
+    return evaluate
 
 
 @pytest.mark.parametrize("name", CASES)
@@ -35,15 +39,7 @@ def test_complete_rotamer_score_conserves_whole_pose(backend, name, dtype):
         backend.molecule(CASES[name], terms=("ref",))
         e, score = complete_rotamer_scorer(backend)
         xyz = backend.numpy(e.rotamers.coords).astype(dtype)
-        x = e.array(xyz)
-        if backend.framework == "jax":
-            values, indices = backend.module.jit(score)(x)
-            dx = backend.module.jit(backend.module.grad(lambda x: score(x)[0].sum()))(x)
-        else:
-            x = x.detach().requires_grad_()
-            values, indices = score(x)
-            dx = backend.module.autograd.grad(values.sum(), x)[0]
-        values, indices, dx = map(backend.numpy, (values, indices, dx))
+        values, indices, dx = _score_arrays(backend, e, score, xyz)
         total = np.zeros(backend.pose.n_poses)
         np.add.at(total, indices[0], values)
         whole, whole_gradient = backend.value_and_grad(backend.coords().astype(dtype))
@@ -82,6 +78,45 @@ def test_complete_rotamer_score_conserves_whole_pose(backend, name, dtype):
                         backend, family="genbonded", sampled=True
                     )
                     _check_packing_pages(backend, sampled, sampled=True)
+
+        if name == "mixed_batch" and dtype == np.float64:
+            weights = {
+                st: backend.score_function.get_weight(st)
+                for st in backend.score_function.all_score_types()
+            }
+            for factor in (0.5, 2.0):
+                for st, weight in weights.items():
+                    backend.score_function.set_weight(st, factor * weight)
+                updated = _prepare_complete_score(backend, e)
+                actual, ids, derivative = _score_arrays(backend, e, updated, xyz)
+                np.testing.assert_array_equal(ids, indices)
+                np.testing.assert_allclose(
+                    actual, factor * values, rtol=2e-10, atol=2e-10
+                )
+                np.testing.assert_allclose(
+                    derivative, factor * dx, rtol=2e-10, atol=2e-10
+                )
+                # An existing scorer keeps its own numeric parameter snapshot.
+                restored, ids, derivative = _score_arrays(backend, e, score, xyz)
+                np.testing.assert_array_equal(ids, indices)
+                np.testing.assert_allclose(restored, values, rtol=2e-10, atol=2e-10)
+                np.testing.assert_allclose(derivative, dx, rtol=2e-10, atol=2e-10)
+            for st, weight in weights.items():
+                backend.score_function.set_weight(st, weight)
+
+
+def _score_arrays(backend, execution, score, coordinates):
+    x = execution.array(coordinates)
+    if backend.framework == "jax":
+        values, indices = backend.module.jit(score)(x)
+        gradient = backend.module.jit(backend.module.grad(lambda x: score(x)[0].sum()))(
+            x
+        )
+    else:
+        x = x.detach().requires_grad_()
+        values, indices = score(x)
+        gradient = backend.module.autograd.grad(values.sum(), x)[0]
+    return tuple(map(backend.numpy, (values, indices, gradient)))
 
 
 def _check_named_sparse_channels(b, e):

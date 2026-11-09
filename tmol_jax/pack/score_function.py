@@ -66,6 +66,12 @@ def _reference(coords, state):
     return values[None, :].astype(coords.dtype), indices
 
 
+def _prepared_scores(evaluate, shape, coords, arrays, candidates):
+    if coords.shape != shape:
+        raise ValueError(f"expected coordinates with shape {shape}")
+    return evaluate(coords, arrays, candidates)
+
+
 @partial(jax.jit, static_argnums=(0,))
 def _packing_entry_indices(evaluate, coords, arrays):
     # Keep the existing term's identity construction. XLA can discard its
@@ -175,15 +181,23 @@ class RotamerScorer:
                 for *_, state, spatial in self.entries
             )
         return partial(
-            self._evaluate, arrays=self._arrays, candidates=tuple(prepared_indices)
+            _prepared_scores,
+            self._evaluate,
+            self.shape,
+            arrays=self._arrays,
+            candidates=tuple(prepared_indices),
         )
 
     def _compiled_evaluator(self, entries, *, paged=False):
-        # Floating tables remain explicit device operands, avoiding duplicate
-        # embedded constants while compiling all runtime tensor operations once.
-        leaves, tree = jax.tree.flatten(tuple(entry[4] for entry in entries))
+        # Parameters and weight snapshots are operands, not program identities.
+        # Host weights retain their precision if a later call enables float64.
+        leaves, tree = jax.tree.flatten(
+            tuple((entry[4], np.asarray(entry[2])) for entry in entries)
+        )
         positions = tuple(
-            i for i, leaf in enumerate(leaves) if isinstance(leaf, jax.Array)
+            i
+            for i, leaf in enumerate(leaves)
+            if isinstance(leaf, (jax.Array, np.ndarray))
         )
         arrays = tuple(leaves[i] for i in positions)
         template = tuple(
@@ -194,14 +208,13 @@ class RotamerScorer:
         )
         return (
             compile_program(
-                tuple(entry[:4] for entry in entries),
+                tuple((entry[0], entry[1], entry[3]) for entry in entries),
                 self.score_types,
                 tree,
                 template,
                 positions,
                 self.sum_terms,
                 self.apply_weights,
-                self.shape,
             ),
             arrays,
         )
@@ -283,28 +296,27 @@ def _compiled_rotamer_execution(
     positions,
     sum_terms,
     apply_weights,
-    shape,
 ):
     """Reuse programs across renders; all topology and parameter arrays are operands."""
 
     @jax.jit
     def score(x, arrays, candidates):
-        if x.shape != shape or x.dtype not in (jnp.float32, jnp.float64):
-            raise ValueError(f"expected float32/64 coordinates with shape {shape}")
+        if x.dtype not in (jnp.float32, jnp.float64):
+            raise ValueError("expected float32/64 coordinates")
         state_leaves = list(template)
         for i, value in zip(positions, arrays):
             state_leaves[i] = value
         states = tree.unflatten(state_leaves)
         all_values, all_indices = [], []
-        for entry, state, indices in zip(entries, states, candidates):
-            provided, selected, weights, evaluate = entry[:4]
+        for entry, (state, weights), indices in zip(entries, states, candidates):
+            provided, selected, evaluate = entry
             if indices is None:
                 values, ids = evaluate(x, state)
             else:
                 values, ids = evaluate(x, state, indices), indices
             values = values[jnp.asarray(selected)]
             if apply_weights:
-                values *= jnp.asarray([weights[i] for i in selected], x.dtype)[:, None]
+                values *= weights[jnp.asarray(selected)].astype(x.dtype)[:, None]
             if sum_terms:
                 values = values.sum(axis=0)
             else:
