@@ -23,7 +23,8 @@ from tmol_core.relax import (  # noqa: F401; preserve existing re-exports
     relax_pack_min_step as _shared_relax_step,
     accept_best as _shared_accept_best,
     default_task_operation,
-    KINEMATIC_RELAX_LBFGS_OPTIONS,
+    KINEMATIC_RELAX_LBFGS_OPTIONS as KINEMATIC_RELAX_LBFGS_OPTIONS,
+    kinematic_relax_options,
 )
 
 RelaxScheduleEntry = float | int | dict[str, float]
@@ -99,6 +100,9 @@ class KinematicRelaxMinimizer:
             FoldForest.reasonable_fold_forest of each minimized pose stack.
         cuda_graph: Capture and replay the CUDA forward/backward scoring path.
             None turns it on for CUDA poses and off on CPU.
+        policy: "legacy" preserves the earlier energy-patience convergence and
+            history size. "staged" uses stage-relative convergence with a
+            gradient threshold and the current optimizer history default.
     """
 
     def __init__(
@@ -107,6 +111,7 @@ class KinematicRelaxMinimizer:
         fold_forest: FoldForest | None = None,
         *,
         cuda_graph: bool | None = None,
+        policy: str = "legacy",
     ):
         if move_map is not None and not isinstance(move_map, MoveMap):
             raise TypeError(
@@ -114,6 +119,8 @@ class KinematicRelaxMinimizer:
                 f"{type(move_map).__name__}; use CartesianRelaxMinimizer for a "
                 "CartesianMoveMap"
             )
+        kinematic_relax_options(policy)
+        self.policy = policy
         self.move_map = move_map
         self.fold_forest = fold_forest
         self.cuda_graph = cuda_graph
@@ -141,9 +148,7 @@ class KinematicRelaxMinimizer:
         if fold_forest is None:
             fold_forest = FoldForest.reasonable_fold_forest(pose_stack)
         self.minimizer.cuda_graph = _graph_mode(self.cuda_graph, pose_stack)
-        options = dict(KINEMATIC_RELAX_LBFGS_OPTIONS, verbose=verbose)
-        if rtol is not None:
-            options["rtol"] = rtol
+        options = dict(kinematic_relax_options(self.policy, rtol), verbose=verbose)
         return self.minimizer(
             pose_stack,
             sfxn,

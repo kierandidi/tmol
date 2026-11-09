@@ -128,6 +128,25 @@ KINEMATIC_RELAX_LBFGS_OPTIONS = {
 }
 
 
+def kinematic_relax_options(policy: str, rtol: float | None = None, *, overrides=None):
+    """Resolve kinematic convergence without changing global optimizer defaults.
+
+    Explicit options override the selected policy; only the staged policy then
+    applies the schedule's relative tolerance. Staged history remains inherited
+    from the optimizer, preserving existing custom-optimizer call signatures.
+    """
+    if policy == "legacy":
+        options = dict(history_size=128, rtol=None, atol=0.01, patience=5, gradtol=None)
+    elif policy == "staged":
+        options = dict(KINEMATIC_RELAX_LBFGS_OPTIONS)
+    else:
+        raise ValueError("kinematic relaxation policy must be 'legacy' or 'staged'")
+    options.update(overrides or {})
+    if policy == "staged" and rtol is not None:
+        options["rtol"] = rtol
+    return options
+
+
 def fast_relax(
     pose_stack,
     sfxn,
