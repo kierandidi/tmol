@@ -88,22 +88,45 @@ def test_relax_minimizers_reject_the_other_move_map(ubq_pdb, torch_device):
         KinematicRelaxMinimizer(CartesianMoveMap())
 
 
-def test_kinematic_relax_default_move_map(ubq_pdb, torch_device):
-    """Without a move map, every mainchain/sidechain torsion and jump moves."""
+@pytest.mark.parametrize("policy", [None, "legacy", "staged"])
+def test_kinematic_relax_default_move_map(ubq_pdb, torch_device, policy):
+    """Movement and actual optimizer settings survive the stage adapter."""
+    from tmol.optimization._lbfgs_armijo import LBFGS_Armijo
+
     pose_stack = pose_stack_from_file(
         ubq_pdb, torch_device, no_optH=True, missing_density_distance_threshold=0.0
     )
-    minimizer = KinematicRelaxMinimizer()
+    minimizer = KinematicRelaxMinimizer(
+        **({} if policy is None else {"policy": policy})
+    )
     seen = []
 
     def record(pose, sfxn, fold_forest, move_map, **kwargs):
-        seen.append(move_map)
+        parameter = torch.zeros(1, device=torch_device, requires_grad=True)
+        optimizer = LBFGS_Armijo([parameter], **kwargs["optimizer_kwargs"])
+        seen.append((move_map, optimizer.param_groups[0]))
         return pose
 
     minimizer.minimizer = record
-    minimizer(pose_stack, None)
-    (move_map,) = seen
-    assert move_map.move_all_mc and move_map.move_all_sc and move_map.move_all_jumps
+    for rtol in (0.01, 0.01, 0.01, 5e-4):
+        minimizer(pose_stack, None, rtol=rtol)
+        move_map, settings = seen[-1]
+        assert move_map.move_all_mc and move_map.move_all_sc and move_map.move_all_jumps
+        if policy == "staged":
+            expected = dict(
+                history_size=200,
+                rtol=rtol,
+                atol=None,
+                patience=1,
+                gradtol=180 / numpy.pi,
+            )
+        else:
+            expected = dict(
+                history_size=128, rtol=None, atol=0.01, patience=5, gradtol=None
+            )
+        assert {key: settings[key] for key in expected} == expected
+    with pytest.raises(ValueError, match="policy"):
+        KinematicRelaxMinimizer(policy="unknown")
 
 
 def test_relax_minimizer_graph_mode(ubq_pdb, torch_device):

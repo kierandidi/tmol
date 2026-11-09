@@ -12,6 +12,7 @@ from tmol_core.relax import (
     DEFAULT_RELAX_SCHEDULE,
     KINEMATIC_RELAX_LBFGS_OPTIONS,
     _normalize_schedule,
+    kinematic_relax_options,
     relax_pack_min_step,
 )
 
@@ -88,6 +89,18 @@ def test_stage_tolerance_and_lifetime_contract():
     ]
     assert _normalize_schedule([0.25])[0][3] is None
     assert KINEMATIC_RELAX_LBFGS_OPTIONS["gradtol"] == 180 / np.pi
+    # User overrides are copied; stage tolerance wins only in the staged policy.
+    overrides = {"history_size": 7, "rtol": 0.2}
+    legacy = kinematic_relax_options("legacy", 5e-4, overrides=overrides)
+    staged = kinematic_relax_options("staged", 5e-4, overrides=overrides)
+    assert legacy["rtol"] == 0.2 and staged["rtol"] == 5e-4
+    assert legacy["history_size"] == staged["history_size"] == 7
+    legacy["history_size"] = 1
+    assert overrides == {"history_size": 7, "rtol": 0.2}
+    assert "history_size" not in kinematic_relax_options("staged")
+    assert kinematic_relax_options("legacy", 5e-4)["rtol"] is None
+    with pytest.raises(ValueError, match="policy"):
+        kinematic_relax_options("unknown")
     events = []
     execution = SimpleNamespace(
         task=lambda pose, palette: object(),
