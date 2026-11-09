@@ -110,9 +110,10 @@ and physical peak-memory parity remain open.
 Repeatability is not general: a four-residue canonical CUDA kinematic FastRelax
 case still exceeds its original coordinate and gradient repeat bounds. Its first
 observed divergence is in final-stage packing; identical rotamers can yield
-different interaction-graph energies and alanine selections. The underlying
-scoring or accumulation cause remains unresolved. Actual Torch/Metal N-glycan
-kinematic FastRelax also retains a public-default repeat failure. A private
+different interaction-graph energies and alanine selections. Fixed-entry replay
+isolates variation in native float32 graph accumulation; a repair remains
+unqualified. Earlier Torch/Metal N-glycan kinematic FastRelax also retains a
+staged-policy repeat failure. A private
 control restoring the five pre-PR626 convergence/history settings reproduces
 the tested historical result; it does not qualify a production repair or a
 single-setting explanation. Native JAX MPS is not supported.
