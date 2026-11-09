@@ -71,6 +71,8 @@ def test_complete_rotamer_score_conserves_whole_pose(backend, name, dtype):
         if backend.framework == "jax":
             if dtype == np.float32:
                 _check_named_sparse_channels(backend, e)
+                if name == "mixed_batch":
+                    _check_sparse_coordinate_contract(backend, e)
             elif name in ("ligand", "d_peptide", "mixed_batch", "dna"):
                 _check_packing_pages(backend, e, sampled=False)
                 if name == "d_peptide":
@@ -103,6 +105,28 @@ def test_complete_rotamer_score_conserves_whole_pose(backend, name, dtype):
                 np.testing.assert_allclose(derivative, dx, rtol=2e-10, atol=2e-10)
             for st, weight in weights.items():
                 backend.score_function.set_weight(st, weight)
+
+
+def _check_sparse_coordinate_contract(backend, execution):
+    scorer = backend.score_function.render_rotamer_scoring_module(
+        backend.pose, execution.rotamers
+    )
+    coords = execution.rotamers.coords
+    prepared = scorer.prepare(coords)
+    for invalid in (coords[:-1], coords.astype(np.int32)):
+        for evaluate in (scorer, scorer.prepare, prepared):
+            with pytest.raises(ValueError, match="coordinates"):
+                evaluate(invalid)
+        for topology_only in (False, True):
+            with pytest.raises(ValueError, match="coordinates"):
+                next(
+                    scorer.iter_packing_entries(
+                        invalid,
+                        block_pair_window=1,
+                        score_window=2,
+                        topology_only=topology_only,
+                    )
+                )
 
 
 def _score_arrays(backend, execution, score, coordinates):

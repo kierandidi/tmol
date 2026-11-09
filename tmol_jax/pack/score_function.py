@@ -149,8 +149,14 @@ class RotamerScorer:
     def _validate_coordinates(self, coords):
         if isinstance(coords, jax.core.Tracer):
             raise ValueError("prepare sparse candidates outside JAX transformations")
-        if coords.shape != self.shape or not np.isfinite(np.asarray(coords)).all():
-            raise ValueError(f"expected finite coordinates with shape {self.shape}")
+        if (
+            coords.shape != self.shape
+            or coords.dtype not in (jnp.float32, jnp.float64)
+            or not np.isfinite(np.asarray(coords)).all()
+        ):
+            raise ValueError(
+                f"expected finite float32/64 coordinates with shape {self.shape}"
+            )
         if coords.device != self.rotamers.device:
             raise ValueError("coordinates and conformers must be on the same device")
 
