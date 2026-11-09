@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from tmol_core.relax import (
+from tmol_core.relax import (  # noqa: F401; retain the legacy options re-export
     fast_relax as _shared_fast_relax,
     default_task_operation,
     KINEMATIC_RELAX_LBFGS_OPTIONS as KINEMATIC_RELAX_LBFGS_OPTIONS,
